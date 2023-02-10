@@ -1,0 +1,16 @@
+[package]
+name = "os"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+spin = "0.5.2"
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
+
+[lib]
+crate-type = ["staticlib"]
+
+[profile.dev]
+panic = "abort"
+[profile.release]
+panic = "abort"
