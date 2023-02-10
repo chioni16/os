@@ -1,4 +1,5 @@
-asm_src_dir := src/asm
+arch := x86_64
+asm_src_dir := src/arch/${arch}/asm
 asm_src_files := $(wildcard ${asm_src_dir}/*.asm)
 bin_dir := target/bin
 asm_obj_files := $(patsubst ${asm_src_dir}/%.asm, ${bin_dir}/%.o, ${asm_src_files})

@@ -1,10 +1,8 @@
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
 
-use super::character::{ ScreenChar, ColourCode, Colour } ;
-use lazy_static::lazy_static;
+use super::character::{ ScreenChar, ColourCode } ;
 use core::fmt;
-use spin::Mutex;
 
 struct Buffer;
 
@@ -30,14 +28,22 @@ impl Buffer {
     }
 }
 
-pub struct Writer {
+pub(super) struct Writer {
     column_position: usize,
-    color_code: ColourCode,
+    colour_code: ColourCode,
     buffer: Buffer,
 }
 
 impl Writer {
-    pub fn write_byte(&mut self, byte: u8) {
+    pub(super) fn new(colour_code: ColourCode) -> Self {
+        Self {
+            column_position: 0,
+            colour_code,
+            buffer: Buffer,
+        }
+    }
+
+    fn write_byte(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),
             byte => {
@@ -48,7 +54,7 @@ impl Writer {
                 let row = BUFFER_HEIGHT - 1;
                 let col = self.column_position;
 
-                let color_code = self.color_code;
+                let color_code = self.colour_code;
                 self.buffer.write(row, col, ScreenChar {
                     ascii_character: byte,
                     color_code,
@@ -58,7 +64,7 @@ impl Writer {
         }
     }
 
-    pub fn write_string(&mut self, s: &str) {
+    fn write_string(&mut self, s: &str) {
         for byte in s.bytes() {
             match byte {
                 // printable ASCII byte or newline
@@ -84,7 +90,7 @@ impl Writer {
     fn clear_row(&mut self, row: usize) {
         let blank = ScreenChar {
             ascii_character: b' ',
-            color_code: self.color_code,
+            color_code: self.colour_code,
         };
         for col in 0..BUFFER_WIDTH {
             self.buffer.write(row, col, blank);
@@ -100,15 +106,3 @@ impl fmt::Write for Writer {
 }
 
 
-lazy_static! {
-    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
-        column_position: 0,
-        color_code: ColourCode::new(Colour::Yellow, Colour::Black),
-        buffer: Buffer {},
-    });
-}
-
-pub fn _print(args: fmt::Arguments) {
-    use core::fmt::Write;
-    WRITER.lock().write_fmt(args).unwrap();
-}
