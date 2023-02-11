@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 spin = "0.5.2"
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
+paste = "1.0.11"
 
 [lib]
 crate-type = ["staticlib"]
