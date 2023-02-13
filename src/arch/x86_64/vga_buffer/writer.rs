@@ -1,7 +1,7 @@
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
 
-use super::character::{ ScreenChar, ColourCode } ;
+use super::character::{ColourCode, ScreenChar};
 use core::fmt;
 
 struct Buffer;
@@ -55,10 +55,14 @@ impl Writer {
                 let col = self.column_position;
 
                 let color_code = self.colour_code;
-                self.buffer.write(row, col, ScreenChar {
-                    ascii_character: byte,
-                    color_code,
-                });
+                self.buffer.write(
+                    row,
+                    col,
+                    ScreenChar {
+                        ascii_character: byte,
+                        color_code,
+                    },
+                );
                 self.column_position += 1;
             }
         }
@@ -72,7 +76,6 @@ impl Writer {
                 // not part of printable ASCII range
                 _ => self.write_byte(0xfe),
             }
-
         }
     }
 
@@ -104,5 +107,3 @@ impl fmt::Write for Writer {
         Ok(())
     }
 }
-
-

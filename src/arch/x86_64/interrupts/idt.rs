@@ -5,7 +5,7 @@ use super::isr::HandlerFn;
 struct InterruptDescriptor {
     offset_1: u16,
     selector: u16,
-    options:  u16,
+    options: u16,
     offset_2: u16,
     offset_3: u32,
     reserved: u32,
@@ -39,7 +39,7 @@ impl InterruptDescriptor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Options {
     stack_table: u8,
-    gate_type: GateType, 
+    gate_type: GateType,
     dpl: u8,
     present: bool,
 }
@@ -58,23 +58,23 @@ impl Options {
 impl From<u16> for Options {
     fn from(value: u16) -> Self {
         Self {
-            stack_table: (value & 0b111) as u8,                              // 0-2
-            gate_type: GateType::try_from(((value >> 8) & 1)as u8).unwrap(), // 8 
-            dpl: ((value >> 13) & 0b11) as u8,                               // 13-14
-            present: (value >> 15) > 0,                                      // 15
-        }      
+            stack_table: (value & 0b111) as u8, // 0-2
+            gate_type: GateType::try_from(((value >> 8) & 1) as u8).unwrap(), // 8
+            dpl: ((value >> 13) & 0b11) as u8,  // 13-14
+            present: (value >> 15) > 0,         // 15
+        }
     }
 }
 
 impl From<Options> for u16 {
     fn from(value: Options) -> Self {
         (value.present as u16) << 15
-        | (value.dpl as u16) << 13
-        | 0 << 12
-        | (0b111 as u16) << 9
-        | ((value.gate_type as u8) as u16) << 8
-        | 0 << 3 
-        | value.stack_table as u16
+            | (value.dpl as u16) << 13
+            | 0 << 12
+            | (0b111 as u16) << 9
+            | ((value.gate_type as u8) as u16) << 8
+            | 0 << 3
+            | value.stack_table as u16
     }
 }
 
@@ -83,7 +83,7 @@ impl From<Options> for u16 {
 enum GateType {
     // If this bit is 0, interrupts are disabled when this handler is called.
     Interrupt = 0,
-    Trap      = 1,
+    Trap = 1,
 }
 
 impl TryFrom<u8> for GateType {
@@ -113,19 +113,19 @@ fn lidt(dtp: &DescriptorTablePointer) {
 
 // #[repr(transparent)]
 #[repr(C, align(16))]
-pub(super) struct InterruptDescriptorTable ([InterruptDescriptor; 16]);
+pub(super) struct InterruptDescriptorTable([InterruptDescriptor; 16]);
 
 impl InterruptDescriptorTable {
     pub(super) fn new() -> Self {
-        Self ([ InterruptDescriptor::missing(); 16 ])
+        Self([InterruptDescriptor::missing(); 16])
     }
 
     pub(super) fn add_handler(&mut self, index: usize, handler: HandlerFn) {
-        let options = Options { 
+        let options = Options {
             stack_table: 0,
-            gate_type: GateType::Interrupt, 
-            dpl: 0, 
-            present: true, 
+            gate_type: GateType::Interrupt,
+            dpl: 0,
+            present: true,
         };
         self.0[index] = InterruptDescriptor::new(handler, options);
     }
@@ -133,7 +133,7 @@ impl InterruptDescriptorTable {
     pub(super) fn load(&'static self) {
         let dtp = DescriptorTablePointer {
             size: (core::mem::size_of_val(self) - 1) as u16,
-            offset: self as *const Self as  u64,
+            offset: self as *const Self as u64,
         };
 
         lidt(&dtp);
