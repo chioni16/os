@@ -104,6 +104,9 @@ lazy_static! {
         idt.add_handler(3, handler!(breakpoint));
         idt.add_handler(6, handler!(invalid_opcode));
         idt.add_handler(14, handler_with_error_code!(page_fault));
+
+        idt.add_handler(0x20, handler!(timer));
+        idt.add_handler(0x21, handler!(keyboard));
         idt
     };
 }

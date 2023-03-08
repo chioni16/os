@@ -113,11 +113,11 @@ fn lidt(dtp: &DescriptorTablePointer) {
 
 // #[repr(transparent)]
 #[repr(C, align(16))]
-pub(super) struct InterruptDescriptorTable([InterruptDescriptor; 16]);
+pub(super) struct InterruptDescriptorTable([InterruptDescriptor; 48]);
 
 impl InterruptDescriptorTable {
     pub(super) fn new() -> Self {
-        Self([InterruptDescriptor::missing(); 16])
+        Self([InterruptDescriptor::missing(); 48])
     }
 
     pub(super) fn add_handler(&mut self, index: usize, handler: HandlerFn) {

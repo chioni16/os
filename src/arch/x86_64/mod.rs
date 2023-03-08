@@ -1,10 +1,13 @@
-mod apic;
+mod acpi;
 mod interrupts;
+mod pic;
+mod port;
 mod vga_buffer;
 
 pub(crate) fn init() {
     interrupts::init();
-    let _rsdt = apic::find_rsdt();
+    pic::init();
+    // let _rsdt = acpi::find_rsdt().unwrap();
 }
 
 pub(crate) use vga_buffer::_print;
