@@ -87,6 +87,15 @@ fn without_interrupts<R, F: FnOnce() -> R>(f: F) -> R {
     ret
 }
 
+// get address that caused page fault
+// this information is stored in the CR2 register
+fn get_faulty_address() -> usize {
+    let faulty_addr;
+    unsafe {
+        core::arch::asm!("mov {}, cr2", out(reg) faulty_addr, options(nostack));
+    }
+    faulty_addr
+}
 
 pub(super) extern "C" fn divide_by_zero(isf: &InterruptStackFrame) -> ! {
     crate::println!("{:?}", isf);
@@ -106,8 +115,12 @@ pub(super) extern "C" fn invalid_opcode(isf: &InterruptStackFrame) {
 
 pub(super) extern "C" fn page_fault(isf: &InterruptStackFrame, error_code: u64) -> ! {
     crate::println!("{:?}", isf);
-    crate::println!("EXCEPTION: PAGE FAULT @ {}", isf.ip);
-    crate::println!("{}", error_code);
+    crate::println!(
+        "EXCEPTION: PAGE FAULT accessing addr: {:#x}; instruction located @ {:#x}",
+        get_faulty_address(),
+        isf.ip
+    );
+    crate::println!("{:#b}", error_code);
     loop {}
 }
 pub(super) extern "C" fn timer(_isf: &InterruptStackFrame) {
@@ -121,4 +134,24 @@ pub(super) extern "C" fn keyboard(_isf: &InterruptStackFrame) {
         crate::print!("{:x}", Port::new(0x60).read::<u8>());
         pic::send_eoi(1);
     });
+}
+
+pub(super) fn rx_handler() {
+    let base_addr = 0xc000u16;
+    unsafe {
+        // 0030h-0033h R/W RBSTART Receive (Rx) Buffer Start Address 
+        crate::println!("RBSTART: {:#x}", Port::new(base_addr + 0x30).read::<u32>());
+        // 0037h R/W CR Command Register
+        crate::println!("COMMAND: {:#b}", Port::new(base_addr + 0x37).read::<u8>());
+        // 0038h-0039h R/W CAPR Current Address of Packet Read
+        crate::println!("CAPR: {:#x}", Port::new(base_addr + 0x38).read::<u16>());
+        // 003Ah-003Bh R CBR Current Buffer Address:
+        crate::println!("CBA: {:#x}", Port::new(base_addr + 0x3a).read::<u16>());
+        // 003Ch-003Dh R/W IMR Interrupt Mask Register
+        crate::println!("IMR: {:#b}", Port::new(base_addr + 0x3c).read::<u16>());
+        // 003Eh-003Fh R/W ISR Interrupt Status Register
+        crate::println!("ISR: {:#b}", Port::new(base_addr + 0x3e).read::<u16>());
+        // 0044h-0047h R/W RCR Receive (Rx) Configuration Register 
+        crate::println!("RCR: {:#x}", Port::new(base_addr + 0x44).read::<u32>());
+    }
 }

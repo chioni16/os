@@ -18,9 +18,9 @@ static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::empty();
 #[no_mangle]
 pub extern "C" fn rust_start() -> ! {
     println!("Hello!");
-    let heap_start = 0x29800000;
+    let heap_start = 0x800000;
     // let heap_start = 0x29800000 as *mut u8;
-    let heap_size = 4 * 1024 * 1024;
+    let heap_size = 64 * 1024 * 1024;
 
     unsafe {
         HEAP_ALLOCATOR.lock().init(heap_start, heap_size);
@@ -40,14 +40,21 @@ pub extern "C" fn rust_start() -> ! {
         core::arch::asm!("int 3");
     }
 
-    unsafe {
-        // let _ = core::ptr::read_volatile(0x40000000 as *const u8);
-        core::ptr::write_volatile(0x40000000 as *mut u8, 0);
-    }
+    // unsafe {
+    //     // let _ = core::ptr::read_volatile(0x40000000 as *const u8);
+    //     core::ptr::write_volatile(0x40000000 as *mut u8, 0);
+    // }
 
     println!("Bye!");
 
-    loop {}
+    loop {
+        unsafe {
+            core::arch::asm!("sti");
+        }
+        unsafe {
+            core::arch::asm!("hlt");
+        }
+    }
 }
 
 #[panic_handler]
@@ -68,33 +75,34 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
-// struct PortWriter(u16);
-// static mut PW: PortWriter = PortWriter(0x3f8);
+struct PortWriter(u16);
+static mut PW: PortWriter = PortWriter(0x3f8);
 
-// impl PortWriter {
-//     fn write_byte(&self, b: u8) {
-//         unsafe {
-//             core::arch::asm!("out dx, al", in("dx") self.0, in("al") b);
-//         }
-//     }
-// }
+impl PortWriter {
+    fn write_byte(&self, b: u8) {
+        unsafe {
+            core::arch::asm!("out dx, al", in("dx") self.0, in("al") b);
+        }
+    }
+}
 
-// impl core::fmt::Write for PortWriter {
-//     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-//         for byte in s.bytes() {
-//             match byte {
-//                 // printable ASCII byte or newline
-//                 0x20..=0x7e | b'\n' => self.write_byte(byte),
-//                 // not part of printable ASCII range
-//                 _ => self.write_byte(0xfe),
-//             }
+impl core::fmt::Write for PortWriter {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        for byte in s.bytes() {
+            match byte {
+                // printable ASCII byte or newline
+                0x20..=0x7e | b'\n' => self.write_byte(byte),
+                // not part of printable ASCII range
+                _ => self.write_byte(0xfe),
+            }
+        }
+        Ok(())
+    }
+}
 
-//         }
-//         Ok(())
-//     }
-// }
-
-// pub fn _print_port(args: core::fmt::Arguments) {
-//     use core::fmt::Write;
-//     unsafe { PW.write_fmt(args).unwrap(); }
-// }
+pub fn _print_port(args: core::fmt::Arguments) {
+    use core::fmt::Write;
+    unsafe {
+        PW.write_fmt(args).unwrap();
+    }
+}

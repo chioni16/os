@@ -107,6 +107,8 @@ lazy_static! {
 
         idt.add_handler(0x20, handler!(timer));
         idt.add_handler(0x21, handler!(keyboard));
+
+        idt.add_handler(0x2b, handler!(rx_handler));
         idt
     };
 }

@@ -10,6 +10,11 @@ kernel := ${bin_dir}/kernel
 
 .PHONY: all
 all: ${bin_dir}/os.iso
+	qemu-system-x86_64 -boot d -cdrom ~/projects/os/target/bin/os.iso \
+	-netdev user,id=n1,hostfwd=tcp::5555-:22 -device rtl8139,netdev=n1 \
+	-object filter-dump,id=f1,netdev=n1,file=/mnt/f/dump.pcap \
+	-monitor stdio -d int \
+	-no-reboot -no-shutdown
 
 ${bin_dir}/os.iso: ${kernel}
 	mkdir -p ${iso_dir}/boot/grub
