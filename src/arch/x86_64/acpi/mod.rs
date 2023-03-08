@@ -19,7 +19,7 @@ struct Rsdp {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-struct AcpiSdtHeader {
+pub(super) struct AcpiSdtHeader {
     signature: [u8; 4],
     length: u32,
     revision: u8,
@@ -32,52 +32,52 @@ struct AcpiSdtHeader {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct LocalApic {
+pub(super) struct LocalApic {
     pid: u8,
     aid: u8,
     flags: u32,
 }
 #[derive(Debug, Clone, Copy)]
-struct IoApic {
+pub(super) struct IoApic {
     ioaid: u8,
     reserved: u8,
     ioapic_addr: u32,
     gsib: u32,
 }
 #[derive(Debug, Clone, Copy)]
-struct IoApicIntSourceOverride {
+pub(super) struct IoApicIntSourceOverride {
     bus_source: u8,
     irq_source: u8,
     gsi: u32,
     flags: u16,
 }
 #[derive(Debug, Clone, Copy)]
-struct IoApicNmiSource {
+pub(super) struct IoApicNmiSource {
     nmi_source: u8,
     reserved: u8,
     flags: u16,
     gsi: u32,
 }
 #[derive(Debug, Clone, Copy)]
-struct LApicNmi {
+pub(super) struct LApicNmi {
     pid: u8,
     flags: u16,
     lint: u8,
 }
 #[derive(Debug, Clone, Copy)]
-struct LApicAddrOverride {
+pub(super) struct LApicAddrOverride {
     reserved: u16,
     lapic_physical_addr: u64,
 }
 #[derive(Debug, Clone, Copy)]
-struct X2Apic {
+pub(super) struct X2Apic {
     reserved: u16,
     id: u32,
     flags: u32,
     acpi_id: u32,
 }
 #[derive(Debug, Clone, Copy)]
-enum MadtEntry {
+pub(super) enum MadtEntry {
     LocalApic(LocalApic),
     IoApic(IoApic),
     IoApicIntSourceOverride(IoApicIntSourceOverride),
@@ -89,13 +89,15 @@ enum MadtEntry {
 
 macro_rules! madt_type {
     ($mt: ident, $addr: ident, $cur_len: ident) => {
-        MadtEntry::$mt(unsafe { *($addr.byte_add($cur_len) as *const $mt) })
+        Some(MadtEntry::$mt(unsafe {
+            *($addr.byte_add($cur_len) as *const $mt)
+        }))
     };
 }
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-enum AcpiSdtType {
+pub(super) enum AcpiSdtType {
     Rsdt(Vec<AcpiSdt>),
     Madt {
         lapic: u32,
@@ -106,8 +108,8 @@ enum AcpiSdtType {
 
 #[derive(Debug, Clone)]
 pub(super) struct AcpiSdt {
-    header: &'static AcpiSdtHeader,
-    fields: AcpiSdtType,
+    pub(super) header: &'static AcpiSdtHeader,
+    pub(super) fields: AcpiSdtType,
 }
 
 impl AcpiSdt {
@@ -148,10 +150,15 @@ impl AcpiSdt {
                         4 => madt_type!(LApicNmi, addr, cur_len),
                         5 => madt_type!(LApicAddrOverride, addr, cur_len),
                         9 => madt_type!(X2Apic, addr, cur_len),
-                        _ => return None,
+                        et => {
+                            crate::println!("unsupported APIC entry type: {}", et);
+                            None
+                        }
                     };
                     cur_len += record_len as usize;
-                    entries.push(entry);
+                    if let Some(entry) = entry {
+                        entries.push(entry);
+                    }
                 }
                 AcpiSdtType::Madt {
                     lapic,
@@ -168,7 +175,9 @@ impl AcpiSdt {
                 return None;
             }
         };
-        Some(Self { header, fields })
+        let a = Some(Self { header, fields });
+        // crate::println!("ACPI end: {:?}", a);
+        a
     }
 }
 
