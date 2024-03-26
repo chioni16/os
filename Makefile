@@ -10,10 +10,16 @@ kernel := ${bin_dir}/kernel
 
 .PHONY: all
 all: ${bin_dir}/os.iso
-	qemu-system-x86_64 -boot d -cdrom target/bin/os.iso \
+	qemu-system-x86_64 \
+	-enable-kvm \
+	-cpu host \
+	-M q35 \
+	-smp 4 \
+	-boot d -cdrom target/bin/os.iso \
 	-netdev user,id=n1,hostfwd=tcp::5555-:22 -device rtl8139,netdev=n1 \
 	-object filter-dump,id=f1,netdev=n1,file=/tmp/dump.pcap \
 	-monitor stdio -d int \
+	--serial file:/tmp/serial \
 	-no-reboot -no-shutdown
 
 ${bin_dir}/os.iso: ${kernel}

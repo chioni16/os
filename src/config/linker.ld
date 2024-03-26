@@ -9,6 +9,7 @@ SECTIONS {
     .text :
     {
         *(.text)
+        *(.text.ap)
     }
     .rodata : {
         *(.rodata)

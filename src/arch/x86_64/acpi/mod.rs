@@ -5,8 +5,10 @@ use alloc::vec::Vec;
 
 const RSDP_SIGNATURE: &[u8] = b"RSD PTR "; // notice the space at the end
 
-// only supports V1 for now
-// doesn't support the extended version
+trait Sdp {
+    fn get_table(&self) -> Option<AcpiSdt>;
+}
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 struct Rsdp {
@@ -15,6 +17,35 @@ struct Rsdp {
     oemid: [u8; 6],
     revision: u8,
     rsdt_addr: u32, // 4 byte addr
+}
+
+impl Sdp for Rsdp {
+    fn get_table(&self) -> Option<AcpiSdt> {
+        AcpiSdt::new(self.rsdt_addr as *const AcpiSdtHeader)
+            .filter(|a| matches!(a.fields, AcpiSdtType::Rsdt(_)))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct Xsdp {
+    signature: [u8; 8],
+    checksum: u8,
+    oemid: [u8; 6],
+    revision: u8,
+    rsdt_addr: u32, // deprecated
+
+    length: u32,
+    xsdt_addr: u64,
+    extended_checksum: u8,
+    reserved: [u8; 3],
+}
+
+impl Sdp for Xsdp {
+    fn get_table(&self) -> Option<AcpiSdt> {
+        AcpiSdt::new(self.xsdt_addr as *const AcpiSdtHeader)
+            .filter(|a| matches!(a.fields, AcpiSdtType::Rsdt(_)))
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -30,6 +61,13 @@ pub(super) struct AcpiSdtHeader {
     creator_id: u32,
     creator_revision: u32,
 }
+
+// use bitflags::bitflags;
+// bitflags! {
+//     struct LocalApicFlags: u8 {
+//         const ICW4	    = 0x01;		/* ICW4 (not) needed */
+//     }
+// }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
@@ -103,9 +141,9 @@ macro_rules! madt_type {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct RsdtEntries(Vec<u32>);
+pub(super) struct TablePointers(Vec<u64>);
 
-impl RsdtEntries {
+impl TablePointers {
     pub(super) fn find_madt(&self) -> Option<AcpiSdt> {
         self.0
             .iter()
@@ -121,7 +159,7 @@ impl RsdtEntries {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub(super) enum AcpiSdtType {
-    Rsdt(RsdtEntries),
+    Rsdt(TablePointers),
     Madt {
         lapic: u32,
         flags: u32,
@@ -147,12 +185,25 @@ impl AcpiSdt {
         let header_length = core::mem::size_of::<AcpiSdtHeader>();
         let fields = match &header.signature {
             b"RSDT" => {
-                let num_tables = (header.length as usize - header_length) / 4;
+                crate::println!("from RSDT");
+                let entry_size = 4;
+                let num_tables = (header.length as usize - header_length) / entry_size;
                 let fields = (0..num_tables)
-                    .map(|i| unsafe { addr.byte_add(header_length + 4 * i) } as *const u32)
+                    .map(|i| unsafe { addr.byte_add(header_length + entry_size * i) } as *const u32)
+                    .map(|addr| unsafe { addr.read_unaligned() })
+                    .map(|table_addr| table_addr as u64)
+                    .collect::<Vec<_>>();
+                AcpiSdtType::Rsdt(TablePointers(fields))
+            }
+            b"XSDT" => {
+                crate::println!("from XSDT");
+                let entry_size = 8;
+                let num_tables = (header.length as usize - header_length) / entry_size;
+                let fields = (0..num_tables)
+                    .map(|i| unsafe { addr.byte_add(header_length + entry_size * i) } as *const u64)
                     .map(|addr| unsafe { addr.read_unaligned() })
                     .collect::<Vec<_>>();
-                AcpiSdtType::Rsdt(RsdtEntries(fields))
+                AcpiSdtType::Rsdt(TablePointers(fields))
             }
             b"APIC" => {
                 let lapic =
@@ -201,26 +252,22 @@ impl AcpiSdt {
                 return None;
             }
         };
-        let a = Some(Self { header, fields });
-        // crate::println!("ACPI end: {:?}", a);
-        a
+
+        Some(Self { header, fields })
     }
 }
 
 pub(super) fn find_rsdt() -> Option<AcpiSdt> {
-    // version 2 is not supported as of yet
-    find_rsdp()
-        .and_then(|rsdp| AcpiSdt::new(rsdp.rsdt_addr as *const AcpiSdtHeader))
-        .filter(|a| matches!(a.fields, AcpiSdtType::Rsdt(_)))
+    find_rsdp().and_then(|table_pointer| table_pointer.get_table())
 }
 
-fn find_rsdp() -> Option<&'static Rsdp> {
+fn find_rsdp() -> Option<&'static dyn Sdp> {
     // TODO: Extended BIOS Data Area (EBDA)
     // the main BIOS area below 1 MB
     scan_memory_for_rsdp(0x000E0000 as *const u8, 0x000FFFFF as *const u8)
 }
 
-fn scan_memory_for_rsdp(mut start: *const u8, end: *const u8) -> Option<&'static Rsdp> {
+fn scan_memory_for_rsdp(mut start: *const u8, end: *const u8) -> Option<&'static dyn Sdp> {
     // always occurs at 16 byte boundaries
     start = unsafe { start.byte_add(start.align_offset(16)) };
     while (start as usize) < (end as usize) {
@@ -228,7 +275,14 @@ fn scan_memory_for_rsdp(mut start: *const u8, end: *const u8) -> Option<&'static
         if candidate == RSDP_SIGNATURE
             && calculate_checksum(start, core::mem::size_of::<Rsdp>()) == 0
         {
-            return Some(unsafe { &*(start as *const Rsdp) });
+            let rsdp = unsafe { &*(start as *const Rsdp) };
+            if rsdp.revision == 0 {
+                return Some(rsdp);
+            }
+            if rsdp.revision == 2 && calculate_checksum(start, core::mem::size_of::<Xsdp>()) == 0 {
+                let xsdp = unsafe { &*(start as *const Xsdp) };
+                return Some(xsdp);
+            }
         }
         start = unsafe { start.byte_add(16) };
     }

@@ -1,4 +1,5 @@
 mod acpi;
+mod apic;
 mod interrupts;
 mod pci;
 mod pic;
@@ -18,6 +19,8 @@ pub(crate) fn init() {
 
     let madt = rsdt.find_madt().unwrap();
     crate::println!("found madt: {:x?}", madt.fields);
+
+    apic::ap_init();
 }
 
 pub(crate) use vga_buffer::_print;
