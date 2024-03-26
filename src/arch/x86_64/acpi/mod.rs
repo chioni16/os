@@ -32,12 +32,14 @@ pub(super) struct AcpiSdtHeader {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
 pub(super) struct LocalApic {
     pid: u8,
     aid: u8,
     flags: u32,
 }
 #[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
 pub(super) struct IoApic {
     ioaid: u8,
     reserved: u8,
@@ -45,6 +47,7 @@ pub(super) struct IoApic {
     gsib: u32,
 }
 #[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
 pub(super) struct IoApicIntSourceOverride {
     bus_source: u8,
     irq_source: u8,
@@ -52,6 +55,7 @@ pub(super) struct IoApicIntSourceOverride {
     flags: u16,
 }
 #[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
 pub(super) struct IoApicNmiSource {
     nmi_source: u8,
     reserved: u8,
@@ -59,17 +63,20 @@ pub(super) struct IoApicNmiSource {
     gsi: u32,
 }
 #[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
 pub(super) struct LApicNmi {
     pid: u8,
     flags: u16,
     lint: u8,
 }
 #[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
 pub(super) struct LApicAddrOverride {
     reserved: u16,
     lapic_physical_addr: u64,
 }
 #[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
 pub(super) struct X2Apic {
     reserved: u16,
     id: u32,
@@ -96,9 +103,25 @@ macro_rules! madt_type {
 }
 
 #[derive(Debug, Clone)]
+pub(super) struct RsdtEntries(Vec<u32>);
+
+impl RsdtEntries {
+    pub(super) fn find_madt(&self) -> Option<AcpiSdt> {
+        self.0
+            .iter()
+            .map(|addr| *addr as *const AcpiSdtHeader)
+            .find(|addr| {
+                let table = unsafe { &**addr };
+                &table.signature == b"APIC"
+            })
+            .and_then(AcpiSdt::new)
+    }
+}
+
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub(super) enum AcpiSdtType {
-    Rsdt(Vec<AcpiSdt>),
+    Rsdt(RsdtEntries),
     Madt {
         lapic: u32,
         flags: u32,
@@ -126,22 +149,23 @@ impl AcpiSdt {
             b"RSDT" => {
                 let num_tables = (header.length as usize - header_length) / 4;
                 let fields = (0..num_tables)
-                    .map(|i| unsafe { *(addr.byte_add(header_length + 4 * i) as *const u32) })
-                    .map(|addr| addr as *const AcpiSdtHeader)
-                    .map(AcpiSdt::new)
-                    .flatten()
+                    .map(|i| unsafe { addr.byte_add(header_length + 4 * i) } as *const u32)
+                    .map(|addr| unsafe { addr.read_unaligned() })
                     .collect::<Vec<_>>();
-                AcpiSdtType::Rsdt(fields)
+                AcpiSdtType::Rsdt(RsdtEntries(fields))
             }
             b"APIC" => {
-                let lapic = unsafe { *(addr.byte_add(header_length) as *const u32) };
-                let flags = unsafe { *(addr.byte_add(header_length + 4) as *const u32) };
+                let lapic =
+                    unsafe { (addr.byte_add(header_length) as *const u32).read_unaligned() };
+                let flags =
+                    unsafe { (addr.byte_add(header_length + 4) as *const u32).read_unaligned() };
                 let mut cur_len = header_length + 8;
+
                 let mut entries = Vec::new();
                 while cur_len < header.length as usize {
                     let entry_type = unsafe { *(addr.byte_add(cur_len) as *const u8) };
                     let record_len = unsafe { *(addr.byte_add(cur_len + 1) as *const u8) };
-                    cur_len += 2;
+
                     let entry = match entry_type {
                         0 => madt_type!(LocalApic, addr, cur_len),
                         1 => madt_type!(IoApic, addr, cur_len),
@@ -156,10 +180,12 @@ impl AcpiSdt {
                         }
                     };
                     cur_len += record_len as usize;
+
                     if let Some(entry) = entry {
                         entries.push(entry);
                     }
                 }
+                assert_eq!(cur_len, header.length as usize);
                 AcpiSdtType::Madt {
                     lapic,
                     flags,

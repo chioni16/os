@@ -65,8 +65,13 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => (crate::arch::_print(format_args!($($arg)*)));
-    // ($($arg:tt)*) => (crate::_print_port(format_args!($($arg)*)));
+    ($($arg:tt)*) => ({
+        const VGA: bool = true;
+        const SERIAL: bool = true;
+
+        if VGA { crate::arch::_print(format_args!($($arg)*)); }
+        if SERIAL { crate::_print_port(format_args!($($arg)*)); }
+    });
 }
 
 #[macro_export]

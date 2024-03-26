@@ -1,5 +1,5 @@
 extern crate alloc;
-use alloc::{collections::VecDeque, boxed::Box};
+use alloc::{boxed::Box, collections::VecDeque};
 use core::mem::transmute;
 use lazy_static::lazy_static;
 use paste::paste;
@@ -37,7 +37,7 @@ macro_rules! write_byte {
                 self.write_at_offset($offset, u32::from_le_bytes(cur));
             }
         }
-    }
+    };
 }
 macro_rules! write_word {
     ($name: ident, $offset: expr, $index: expr) => {
@@ -48,7 +48,7 @@ macro_rules! write_word {
                 self.write_at_offset($offset, unsafe { transmute::<[u16; 2], u32>(cur) });
             }
         }
-    }
+    };
 }
 
 impl PciDevice {
@@ -89,7 +89,7 @@ impl PciDevice {
     fn write_at_offset(&mut self, offset: u8, value: u32) {
         write(self.bus, self.device, self.function, offset, value);
     }
-    
+
     // write_word!(status, 0x4, 1);
     write_word!(command, 0x4, 0);
     write_byte!(class_code, 0x8, 3);
@@ -117,43 +117,42 @@ pub(super) struct Type0 {}
 impl Type0 {
     pub(super) fn bars(&mut self, bus: u8, device: u8, function: u8) -> [BaseAddrReg; 6] {
         [
-            BaseAddrReg::new( bus, device, function, 0x10 + 4 * 0),
-            BaseAddrReg::new( bus, device, function, 0x10 + 4 * 1),
-            BaseAddrReg::new( bus, device, function, 0x10 + 4 * 2),
-            BaseAddrReg::new( bus, device, function, 0x10 + 4 * 3),
-            BaseAddrReg::new( bus, device, function, 0x10 + 4 * 4),
-            BaseAddrReg::new( bus, device, function, 0x10 + 4 * 5),
+            BaseAddrReg::new(bus, device, function, 0x10 + 4 * 0),
+            BaseAddrReg::new(bus, device, function, 0x10 + 4 * 1),
+            BaseAddrReg::new(bus, device, function, 0x10 + 4 * 2),
+            BaseAddrReg::new(bus, device, function, 0x10 + 4 * 3),
+            BaseAddrReg::new(bus, device, function, 0x10 + 4 * 4),
+            BaseAddrReg::new(bus, device, function, 0x10 + 4 * 5),
         ]
-	}
+    }
     pub(super) fn cis_pointer(&mut self, bus: u8, device: u8, function: u8) -> u32 {
         read(bus, device, function, 0x28)
-	}
+    }
     pub(super) fn ssid(&mut self, bus: u8, device: u8, function: u8) -> u16 {
         unsafe { transmute::<u32, [u16; 2]>(read(bus, device, function, 0x2c))[1] }
     }
     pub(super) fn svid(&mut self, bus: u8, device: u8, function: u8) -> u16 {
         unsafe { transmute::<u32, [u16; 2]>(read(bus, device, function, 0x2c))[0] }
-	}
+    }
     pub(super) fn erba(&mut self, bus: u8, device: u8, function: u8) -> u32 {
         read(bus, device, function, 0x30)
-	}
+    }
     pub(super) fn capabilities(&mut self, bus: u8, device: u8, function: u8) -> u8 {
         read(bus, device, function, 0x34).to_le_bytes()[0];
         todo!()
-	}
+    }
     pub(super) fn max_latency(&mut self, bus: u8, device: u8, function: u8) -> u8 {
         read(bus, device, function, 0x3c).to_le_bytes()[3]
-	}
+    }
     pub(super) fn min_grant(&mut self, bus: u8, device: u8, function: u8) -> u8 {
         read(bus, device, function, 0x3c).to_le_bytes()[2]
-	}
+    }
     pub(super) fn interrupt_pin(&mut self, bus: u8, device: u8, function: u8) -> u8 {
         read(bus, device, function, 0x3c).to_le_bytes()[1]
-	}
+    }
     pub(super) fn interrupt_line(&mut self, bus: u8, device: u8, function: u8) -> u8 {
         read(bus, device, function, 0x3c).to_le_bytes()[0]
-	}
-
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -176,8 +175,8 @@ impl From<u32> for BaseAddrRegType {
 impl Into<u32> for BaseAddrRegType {
     fn into(self) -> u32 {
         match self {
-            Self::Io(port) => {port | 0b1}
-            Self::Mem  => unimplemented!(),
+            Self::Io(port) => port | 0b1,
+            Self::Mem => unimplemented!(),
         }
     }
 }
@@ -203,9 +202,15 @@ impl BaseAddrReg {
     pub(super) fn read(&mut self) -> BaseAddrRegType {
         read(self.bus, self.device, self.function, self.offset).into()
     }
-    
-    pub(super) fn write(&mut self, new:BaseAddrRegType) {
-        write(self.bus, self.device, self.function, self.offset, new.into())
+
+    pub(super) fn write(&mut self, new: BaseAddrRegType) {
+        write(
+            self.bus,
+            self.device,
+            self.function,
+            self.offset,
+            new.into(),
+        )
     }
 }
 pub(super) struct PciEnumerate {
@@ -279,7 +284,9 @@ impl Iterator for PciEnumerate {
             {
                 continue;
             }
-            let header_type = read(self.cur_bus, self.cur_device, self.cur_function, 12).to_le_bytes()[2] & !(1 << 7);
+            let header_type = read(self.cur_bus, self.cur_device, self.cur_function, 12)
+                .to_le_bytes()[2]
+                & !(1 << 7);
             let header_type = match header_type {
                 0x0 => HeaderType::Type0(Type0 {}),
                 0x1 => HeaderType::Type1,
@@ -330,83 +337,104 @@ fn write(bus: u8, device: u8, function: u8, reg_offset: u8, data: u32) {
 }
 
 pub(super) fn init() {
-    for mut p in
-        PciEnumerate::new().filter(|p| p.device_id == 0x8139 && p.vendor_id == 0x10ec)
-    {
+    for mut p in PciEnumerate::new().filter(|p| p.device_id == 0x8139 && p.vendor_id == 0x10ec) {
         //  data master
         let cur = p.command();
-        p.write_command(cur | 0b100 );
+        p.write_command(cur | 0b100);
         crate::println!("{:016b}", p.command());
 
         if let HeaderType::Type0(mut t) = p.header_type {
             t.bars(p.bus, p.device, p.function)
-            .into_iter()
-            .for_each(|mut b| {
-                if let BaseAddrRegType::Io(orig) = b.read() {
-                    crate::println!("{:x?}", orig);
-                    let orig = orig as u16;
-                    unsafe { 
-                        Port::new(orig + 0x52).write::<u8>(0x00); 
-                        crate::println!("successfully turned it on");
+                .into_iter()
+                .for_each(|mut b| {
+                    if let BaseAddrRegType::Io(orig) = b.read() {
+                        crate::println!("{:x?}", orig);
+                        let orig = orig as u16;
+                        unsafe {
+                            Port::new(orig + 0x52).write::<u8>(0x00);
+                            crate::println!("successfully turned it on");
 
-                        let mut cmd = Port::new(orig + 0x37);
-                        cmd.write::<u8>(0x10); 
-                        crate::println!("wrote 0x10 to cmd reg");
-                        while cmd.read::<u8>() & 0x10 != 0 { }
-                        crate::println!("passed while test");
+                            let mut cmd = Port::new(orig + 0x37);
+                            cmd.write::<u8>(0x10);
+                            crate::println!("wrote 0x10 to cmd reg");
+                            while cmd.read::<u8>() & 0x10 != 0 {}
+                            crate::println!("passed while test");
 
-                        let mut cmd = Port::new(orig + 0x37);
-                        cmd.write(0x0cu8);
-                        crate::println!("Rx and Tx enabled: {:#b}", cmd.read::<u8>());
+                            let mut cmd = Port::new(orig + 0x37);
+                            cmd.write(0x0cu8);
+                            crate::println!("Rx and Tx enabled: {:#b}", cmd.read::<u8>());
 
-                        // let rx_buffer = Box::new([0u8; 8192+16+1500]);
-                        let rx_buffer = Box::new([0x0u8; 8192+16]);
-                        let rx_buffer = Box::into_raw(rx_buffer);
-                        crate::println!("rx_buffer: {:#x?}", rx_buffer);
-                        let mut rx_buffer_port = Port::new(orig + 0x30);
-                        rx_buffer_port.write(rx_buffer as u32);
-                        crate::println!("rx buffer registered @ {:#x}", rx_buffer_port.read::<u32>());
+                            // let rx_buffer = Box::new([0u8; 8192+16+1500]);
+                            let rx_buffer = Box::new([0x0u8; 8192 + 16]);
+                            let rx_buffer = Box::into_raw(rx_buffer);
+                            crate::println!("rx_buffer: {:#x?}", rx_buffer);
+                            let mut rx_buffer_port = Port::new(orig + 0x30);
+                            rx_buffer_port.write(rx_buffer as u32);
+                            crate::println!(
+                                "rx buffer registered @ {:#x}",
+                                rx_buffer_port.read::<u32>()
+                            );
 
-                        let mut imr = Port::new(orig + 0x3c);
-                        imr.write(0x0005u16);
-                        crate::println!("IMR set to {:#b}", imr.read::<u16>());
-                        
-                        let mut rcr_port = Port::new(orig + 0x44);
-                        // rcr_port.write::<u32>(0xf | (1 << 7));
-                        rcr_port.write::<u32>(0xf);
-                        crate::println!("RCR configured to {:#x}", rcr_port.read::<u32>());
-                        
-                        // let mut capr = Port::new(orig + 0x38);
-                        // capr.write::<u16>(0);
-                        // crate::println!("CAPR configured to {:#x}", capr.read::<u32>());
+                            let mut imr = Port::new(orig + 0x3c);
+                            imr.write(0x0005u16);
+                            crate::println!("IMR set to {:#b}", imr.read::<u16>());
 
-                        crate::println!("rtl8159 command: {:b}", cmd.read::<u8>());
+                            let mut rcr_port = Port::new(orig + 0x44);
+                            // rcr_port.write::<u32>(0xf | (1 << 7));
+                            rcr_port.write::<u32>(0xf);
+                            crate::println!("RCR configured to {:#x}", rcr_port.read::<u32>());
 
-                        let base_addr = orig;
-                        // 0030h-0033h R/W RBSTART Receive (Rx) Buffer Start Address 
-                        crate::println!("RBSTART: {:#x}", Port::new(base_addr + 0x30).read::<u32>());
-                        // 0037h R/W CR Command Register
-                        crate::println!("COMMAND: {:#b}", Port::new(base_addr + 0x37).read::<u8>());
-                        // 0038h-0039h R/W CAPR Current Address of Packet Read
-                        crate::println!("CAPR: {:#x}", Port::new(base_addr + 0x38).read::<u16>());
-                        // 003Ah-003Bh R CBR Current Buffer Address:
-                        crate::println!("CBA: {:#x}", Port::new(base_addr + 0x3a).read::<u16>());
-                        // 003Ch-003Dh R/W IMR Interrupt Mask Register
-                        crate::println!("IMR: {:#b}", Port::new(base_addr + 0x3c).read::<u16>());
-                        // 003Eh-003Fh R/W ISR Interrupt Status Register
-                        crate::println!("ISR: {:#b}", Port::new(base_addr + 0x3e).read::<u16>());
-                        // 0044h-0047h R/W RCR Receive (Rx) Configuration Register 
-                        crate::println!("RCR: {:#x}", Port::new(base_addr + 0x44).read::<u32>());
+                            // let mut capr = Port::new(orig + 0x38);
+                            // capr.write::<u16>(0);
+                            // crate::println!("CAPR configured to {:#x}", capr.read::<u32>());
+
+                            crate::println!("rtl8159 command: {:b}", cmd.read::<u8>());
+
+                            let base_addr = orig;
+                            // 0030h-0033h R/W RBSTART Receive (Rx) Buffer Start Address
+                            crate::println!(
+                                "RBSTART: {:#x}",
+                                Port::new(base_addr + 0x30).read::<u32>()
+                            );
+                            // 0037h R/W CR Command Register
+                            crate::println!(
+                                "COMMAND: {:#b}",
+                                Port::new(base_addr + 0x37).read::<u8>()
+                            );
+                            // 0038h-0039h R/W CAPR Current Address of Packet Read
+                            crate::println!(
+                                "CAPR: {:#x}",
+                                Port::new(base_addr + 0x38).read::<u16>()
+                            );
+                            // 003Ah-003Bh R CBR Current Buffer Address:
+                            crate::println!(
+                                "CBA: {:#x}",
+                                Port::new(base_addr + 0x3a).read::<u16>()
+                            );
+                            // 003Ch-003Dh R/W IMR Interrupt Mask Register
+                            crate::println!(
+                                "IMR: {:#b}",
+                                Port::new(base_addr + 0x3c).read::<u16>()
+                            );
+                            // 003Eh-003Fh R/W ISR Interrupt Status Register
+                            crate::println!(
+                                "ISR: {:#b}",
+                                Port::new(base_addr + 0x3e).read::<u16>()
+                            );
+                            // 0044h-0047h R/W RCR Receive (Rx) Configuration Register
+                            crate::println!(
+                                "RCR: {:#x}",
+                                Port::new(base_addr + 0x44).read::<u32>()
+                            );
+                        }
+
+                        // b.write(BaseAddrRegType::Io(u32::MAX));
+                        // crate::println!("{:x?}", b.read());
+                        // b.write(orig);
+                        // crate::println!("{:x?}", b.read());
                     }
-
-                    // b.write(BaseAddrRegType::Io(u32::MAX));
-                    // crate::println!("{:x?}", b.read());
-                    // b.write(orig);
-                    // crate::println!("{:x?}", b.read());
-                }
-            });
+                });
         }
         crate::println!("pci command: {:b}", p.command());
     }
 }
-

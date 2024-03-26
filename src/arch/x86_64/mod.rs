@@ -9,7 +9,15 @@ pub(crate) fn init() {
     interrupts::init();
     pic::init();
     pci::init();
-    // let _rsdt = acpi::find_rsdt().unwrap();
+
+    let rsdt = acpi::find_rsdt();
+    crate::println!("found rsdt: {:x?}", rsdt);
+    let acpi::AcpiSdtType::Rsdt(rsdt) = rsdt.unwrap().fields else {
+        unreachable!()
+    };
+
+    let madt = rsdt.find_madt().unwrap();
+    crate::println!("found madt: {:x?}", madt.fields);
 }
 
 pub(crate) use vga_buffer::_print;

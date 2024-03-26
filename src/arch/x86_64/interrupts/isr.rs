@@ -139,7 +139,7 @@ pub(super) extern "C" fn keyboard(_isf: &InterruptStackFrame) {
 pub(super) fn rx_handler() {
     let base_addr = 0xc000u16;
     unsafe {
-        // 0030h-0033h R/W RBSTART Receive (Rx) Buffer Start Address 
+        // 0030h-0033h R/W RBSTART Receive (Rx) Buffer Start Address
         crate::println!("RBSTART: {:#x}", Port::new(base_addr + 0x30).read::<u32>());
         // 0037h R/W CR Command Register
         crate::println!("COMMAND: {:#b}", Port::new(base_addr + 0x37).read::<u8>());
@@ -151,7 +151,7 @@ pub(super) fn rx_handler() {
         crate::println!("IMR: {:#b}", Port::new(base_addr + 0x3c).read::<u16>());
         // 003Eh-003Fh R/W ISR Interrupt Status Register
         crate::println!("ISR: {:#b}", Port::new(base_addr + 0x3e).read::<u16>());
-        // 0044h-0047h R/W RCR Receive (Rx) Configuration Register 
+        // 0044h-0047h R/W RCR Receive (Rx) Configuration Register
         crate::println!("RCR: {:#x}", Port::new(base_addr + 0x44).read::<u32>());
     }
 }
