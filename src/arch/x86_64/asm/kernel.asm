@@ -7,6 +7,9 @@ extern enable_paging
 
 extern long_mode_start
 
+extern stack_bottom
+extern stack_top
+
 global start
 global error
 
@@ -18,6 +21,7 @@ section .text
 bits 32
 start: 
     mov esp, stack_top ; stack set up
+    push ebx ; push multiboot information pointer
     
     call check_multiboot
     call check_cpuid
@@ -45,7 +49,7 @@ p3_table:
 p2_table:
     resb 4096
 stack_bottom:
-    resb 64*1024*1024
+    resb 4*1024*1024
 stack_top:
 
 section .rodata

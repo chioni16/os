@@ -1,9 +1,12 @@
 #![no_std]
 #![no_main]
 #![feature(naked_functions)]
-#![feature(pointer_byte_offsets)]
+
 
 mod arch;
+mod multiboot;
+
+use core::ptr::addr_of;
 
 use buddy_system_allocator::LockedHeap;
 
@@ -15,9 +18,30 @@ static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::empty();
 // #[global_allocator]
 // static HEAP_ALLOCATOR: LockedHeap = LockedHeap::empty();
 
+extern "C" {
+    static stack_bottom: u8;
+    static stack_top: u8;
+}
+
 #[no_mangle]
-pub extern "C" fn rust_start() -> ! {
-    println!("Hello!");
+pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
+    println!("Hello!: {:#x}", multiboot_addr);
+    unsafe {
+        println!("top: {:#x?}", addr_of!(stack_top));
+        println!("bottom: {:#x?}", addr_of!(stack_bottom));
+    }
+
+    let multiboot_info = multiboot::MultibootInfo::new(multiboot_addr);
+    let elf_sections_tag = multiboot_info.multiboot_elf_tags().unwrap().filter(|s| s.section_type() != 0);
+    let kernel_start = elf_sections_tag.map(|s| s.base_addr()).min().unwrap();
+    let elf_sections_tag = multiboot_info.multiboot_elf_tags().unwrap().filter(|s| s.section_type() != 0);
+    let kernel_end = elf_sections_tag
+        .map(|s| s.base_addr() + s.size())
+        .max()
+        .unwrap();
+    crate::println!("kernel start: {:x}, kernel end: {:x}", kernel_start, kernel_end);
+    crate::println!("multiboot start: {:x}, multiboot end: {:x}", multiboot_info.start(), multiboot_info.end());
+
     let heap_start = 0x800000;
     // let heap_start = 0x29800000 as *mut u8;
     let heap_size = 64 * 1024 * 1024;
@@ -50,8 +74,6 @@ pub extern "C" fn rust_start() -> ! {
     loop {
         unsafe {
             core::arch::asm!("sti");
-        }
-        unsafe {
             core::arch::asm!("hlt");
         }
     }
