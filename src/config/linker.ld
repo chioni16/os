@@ -1,6 +1,12 @@
 ENTRY(start)
 
 SECTIONS {
+    .text.ap :
+    {
+        . = ALIGN(4096);
+        _ap_start_location = .;
+        *(.text.ap)
+    }
     . = 1M;
     .boot :
     {
@@ -9,7 +15,6 @@ SECTIONS {
     .text :
     {
         *(.text)
-        *(.text.ap)
     }
     .rodata : {
         *(.rodata)

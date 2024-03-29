@@ -15,9 +15,16 @@ set_up_page_tables:
     mov [p4_table], eax
 
     ; 1 GiB huge page identical mapping
-    mov eax, 0
-    or eax, 0b10000011 ; present + writable + huge
-    mov [p3_table], eax
+    mov ecx, 0         ; counter variable
+.map_p3_table:
+    mov eax, 0x40000000           ; 1GB
+    mul ecx                       ; start address of ecx-th page
+    or eax, 0b10000011            ; present + writable + huge
+    mov [p3_table + ecx * 8], eax ; map ecx-th entry
+
+    inc ecx            ; increase counter
+    cmp ecx, 4
+    jne .map_p3_table  ; else map the next entry
 
     ret
 

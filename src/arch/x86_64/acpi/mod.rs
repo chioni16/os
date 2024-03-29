@@ -1,11 +1,13 @@
 #![allow(dead_code)]
 
 extern crate alloc;
+use core::fmt::Debug;
+
 use alloc::vec::Vec;
 
 const RSDP_SIGNATURE: &[u8] = b"RSD PTR "; // notice the space at the end
 
-trait Sdp {
+trait Sdp : Debug {
     fn get_table(&self) -> Option<AcpiSdt>;
 }
 
@@ -216,6 +218,7 @@ impl AcpiSdt {
                 while cur_len < header.length as usize {
                     let entry_type = unsafe { *(addr.byte_add(cur_len) as *const u8) };
                     let record_len = unsafe { *(addr.byte_add(cur_len + 1) as *const u8) };
+                    cur_len += 2;
 
                     let entry = match entry_type {
                         0 => madt_type!(LocalApic, addr, cur_len),
@@ -230,7 +233,7 @@ impl AcpiSdt {
                             None
                         }
                     };
-                    cur_len += record_len as usize;
+                    cur_len += record_len as usize - 2;
 
                     if let Some(entry) = entry {
                         entries.push(entry);

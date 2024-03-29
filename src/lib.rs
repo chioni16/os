@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(naked_functions)]
-#![feature(pointer_byte_offsets)]
+#![feature(core_intrinsics)]
 
 mod arch;
 
@@ -50,8 +50,6 @@ pub extern "C" fn rust_start() -> ! {
     loop {
         unsafe {
             core::arch::asm!("sti");
-        }
-        unsafe {
             core::arch::asm!("hlt");
         }
     }
