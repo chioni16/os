@@ -2,7 +2,7 @@ use core::ptr;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-pub(super) struct Elf64SectionHeader {
+pub struct Elf64SectionHeader {
     sh_name: u32,
     sh_type: u32,
     sh_flags: u64,
@@ -16,26 +16,26 @@ pub(super) struct Elf64SectionHeader {
 }
 
 impl Elf64SectionHeader {
-    pub(super) fn section_type(&self) -> u32 {
+    pub fn section_type(&self) -> u32 {
         self.sh_type
     }
 
-    pub(super) fn base_addr(&self) -> u64 {
+    pub fn base_addr(&self) -> u64 {
         self.sh_addr
     }
 
-    pub(super) fn size(&self) -> u64 {
+    pub fn size(&self) -> u64 {
         self.sh_size
     }
 
-    pub(super) fn flags(&self) -> u64 {
+    pub fn flags(&self) -> u64 {
         self.sh_flags
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
-pub(super) struct MemMapEntry {
+pub struct MemMapEntry {
     base_addr: u64,
     length: u64,
     entry_type: u32,
@@ -43,20 +43,24 @@ pub(super) struct MemMapEntry {
 }
 
 impl MemMapEntry {
-    pub(super) fn base_addr(&self) -> u64 {
+    pub fn start(&self) -> u64 {
         self.base_addr
     }
 
-    pub(super) fn length(&self) -> u64 {
+    pub fn length(&self) -> u64 {
         self.length
     }
 
-    pub(super) fn entry_type(&self) -> MemMapEntryType {
+    pub fn end(&self) -> u64 {
+        self.base_addr + self.length - 1
+    }
+
+    pub fn entry_type(&self) -> MemMapEntryType {
         self.entry_type().try_into().unwrap()
     }
 }
 
-pub(super) enum MemMapEntryType {
+pub enum MemMapEntryType {
     Ram = 1,
     Acpi = 3,
     Preserved = 4,
@@ -79,8 +83,8 @@ impl TryFrom<u32> for MemMapEntryType {
     }
 }
 
-#[derive(Debug)]
-pub(super) struct MultibootIter<T> {
+#[derive(Debug, Clone)]
+pub struct MultibootIter<T> {
     start: *const T,
     cur: u32,
     total_size: u32,
@@ -108,13 +112,13 @@ impl<T> Iterator for MultibootIter<T> {
     }
 }
 
-pub(super) struct MultibootInfo {
+pub struct MultibootInfo {
     base: u64,
     size: u32,
 }
 
 impl MultibootInfo {
-    pub(super) fn new(addr: u64) -> Self {
+    pub fn new(addr: u64) -> Self {
         Self {
             base: addr,
             // SAFETY:
@@ -124,15 +128,15 @@ impl MultibootInfo {
         }
     }
 
-    pub(super) fn start(&self) -> u64 {
+    pub fn start(&self) -> u64 {
         self.base
     }
 
-    pub(super) fn size(&self) -> u64 {
+    pub fn size(&self) -> u64 {
         self.size as u64
     }
 
-    pub(super) fn end(&self) -> u64 {
+    pub fn end(&self) -> u64 {
         self.base + self.size as u64
     }
 
@@ -174,7 +178,7 @@ impl MultibootInfo {
         None
     }
 
-    pub(super) fn multiboot_elf_tags(&self) -> Option<MultibootIter<Elf64SectionHeader>> {
+    pub fn multiboot_elf_tags(&self) -> Option<MultibootIter<Elf64SectionHeader>> {
         self.find_tags_of_type(9).map(|(start_addr, total_size)| {
             // SAFETY:
             // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
@@ -197,7 +201,7 @@ impl MultibootInfo {
     }
 
     // assumes presence of only one memory tags entry
-    pub(super) fn multiboot_mem_tags(&self) -> Option<MultibootIter<MemMapEntry>> {
+    pub fn multiboot_mem_tags(&self) -> Option<MultibootIter<MemMapEntry>> {
         self.find_tags_of_type(6).map(|(start_addr, total_size)| {
             // SAFETY:
             // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns

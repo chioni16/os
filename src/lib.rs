@@ -4,6 +4,7 @@
 
 
 mod arch;
+mod mem;
 mod multiboot;
 
 use core::ptr::addr_of;
@@ -32,15 +33,31 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
     }
 
     let multiboot_info = multiboot::MultibootInfo::new(multiboot_addr);
-    let elf_sections_tag = multiboot_info.multiboot_elf_tags().unwrap().filter(|s| s.section_type() != 0);
-    let kernel_start = elf_sections_tag.map(|s| s.base_addr()).min().unwrap();
-    let elf_sections_tag = multiboot_info.multiboot_elf_tags().unwrap().filter(|s| s.section_type() != 0);
+
+    let elf_sections_tag = multiboot_info
+        .multiboot_elf_tags()
+        .unwrap()
+        .filter(|s| s.section_type() != 0);
+    let kernel_start = elf_sections_tag
+        .clone()
+        .map(|s| s.base_addr())
+        .min()
+        .unwrap();
     let kernel_end = elf_sections_tag
         .map(|s| s.base_addr() + s.size())
         .max()
         .unwrap();
-    crate::println!("kernel start: {:x}, kernel end: {:x}", kernel_start, kernel_end);
-    crate::println!("multiboot start: {:x}, multiboot end: {:x}", multiboot_info.start(), multiboot_info.end());
+    crate::println!(
+        "kernel start: {:x}, kernel end: {:x}",
+        kernel_start,
+        kernel_end
+    );
+
+    crate::println!(
+        "multiboot start: {:x}, multiboot end: {:x}",
+        multiboot_info.start(),
+        multiboot_info.end()
+    );
 
     let heap_start = 0x800000;
     // let heap_start = 0x29800000 as *mut u8;
