@@ -1,5 +1,6 @@
 use super::FrameAllocator;
 use crate::mem::frame::Frame;
+use crate::mem::PhysicalAddress;
 use crate::multiboot::{MemMapEntry, MultibootIter};
 
 pub struct AreaAllocator {
@@ -14,10 +15,10 @@ pub struct AreaAllocator {
 
 impl AreaAllocator {
     pub fn new(
-        kernel_start: u64,
-        kernel_end: u64,
-        multiboot_start: u64,
-        multiboot_end: u64,
+        kernel_start: PhysicalAddress,
+        kernel_end: PhysicalAddress,
+        multiboot_start: PhysicalAddress,
+        multiboot_end: PhysicalAddress,
         areas: MultibootIter<MemMapEntry>,
     ) -> Self {
         let mut allocator = AreaAllocator {

@@ -1,12 +1,14 @@
 use core::ptr;
 
+use crate::mem::PhysicalAddress;
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct Elf64SectionHeader {
     sh_name: u32,
     sh_type: u32,
     sh_flags: u64,
-    sh_addr: u64,
+    sh_addr: PhysicalAddress,
     sh_offset: u64,
     sh_size: u64,
     sh_link: u32,
@@ -20,7 +22,7 @@ impl Elf64SectionHeader {
         self.sh_type
     }
 
-    pub fn base_addr(&self) -> u64 {
+    pub fn base_addr(&self) -> PhysicalAddress {
         self.sh_addr
     }
 
@@ -36,14 +38,14 @@ impl Elf64SectionHeader {
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct MemMapEntry {
-    base_addr: u64,
+    base_addr: PhysicalAddress,
     length: u64,
     entry_type: u32,
     reserved: u32,
 }
 
 impl MemMapEntry {
-    pub fn start(&self) -> u64 {
+    pub fn start(&self) -> PhysicalAddress {
         self.base_addr
     }
 
@@ -51,7 +53,7 @@ impl MemMapEntry {
         self.length
     }
 
-    pub fn end(&self) -> u64 {
+    pub fn end(&self) -> PhysicalAddress {
         self.base_addr + self.length - 1
     }
 
@@ -113,12 +115,12 @@ impl<T> Iterator for MultibootIter<T> {
 }
 
 pub struct MultibootInfo {
-    base: u64,
+    base: PhysicalAddress,
     size: u32,
 }
 
 impl MultibootInfo {
-    pub fn new(addr: u64) -> Self {
+    pub fn new(addr: PhysicalAddress) -> Self {
         Self {
             base: addr,
             // SAFETY:
@@ -128,7 +130,7 @@ impl MultibootInfo {
         }
     }
 
-    pub fn start(&self) -> u64 {
+    pub fn start(&self) -> PhysicalAddress {
         self.base
     }
 
@@ -136,11 +138,11 @@ impl MultibootInfo {
         self.size as u64
     }
 
-    pub fn end(&self) -> u64 {
+    pub fn end(&self) -> PhysicalAddress {
         self.base + self.size as u64
     }
 
-    fn find_tags_of_type(&self, tag_type: u32) -> Option<(u64, u32)> {
+    fn find_tags_of_type(&self, tag_type: u32) -> Option<(PhysicalAddress, u32)> {
         let addr = self.base;
         // SAFETY:
         // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns

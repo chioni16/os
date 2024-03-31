@@ -1,6 +1,6 @@
 use super::asm::*;
 
-pub(in super::super) trait InOut {
+pub(super) trait InOut {
     unsafe fn port_in(port: u16) -> Self;
     unsafe fn port_out(port: u16, data: Self);
 }

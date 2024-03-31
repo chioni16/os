@@ -14,6 +14,11 @@ set_up_page_tables:
     or eax, 0b11 ; present + writable
     mov [p4_table], eax
 
+    ; recursive mapping - map the last entry of p4 table to itself
+    mov eax, p4_table
+    or eax, 0b11 ; present + writable
+    mov [p4_table + 511 * 8], eax
+
     ; 1 GiB huge page identical mapping
     mov eax, 0
     or eax, 0b10000011 ; present + writable + huge

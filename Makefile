@@ -24,7 +24,7 @@ ${bin_dir}/os.iso: ${kernel}
 	rm -rf ${iso_dir}
 
 ${kernel}: ${asm_obj_files} ${rust_bin}
-	ld -n -o ${kernel} -T ${conf_dir}/linker.ld ${asm_obj_files} ${rust_bin}
+	ld -verbose -n -o ${kernel} -T ${conf_dir}/linker.ld ${asm_obj_files} ${rust_bin}
 
 .PHONY: ${rust_bin}
 ${rust_bin}: 

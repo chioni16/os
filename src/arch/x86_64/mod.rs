@@ -1,5 +1,6 @@
 mod acpi;
 mod interrupts;
+mod paging;
 mod pci;
 mod pic;
 mod port;
