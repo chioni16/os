@@ -22,7 +22,7 @@ impl AreaAllocator {
         areas: MultibootIter<MemMapEntry>,
     ) -> Self {
         let mut allocator = AreaAllocator {
-            next_free_frame: Frame::containing_address(0),
+            next_free_frame: Frame::containing_address(PhysicalAddress::new(0)),
             current_area: None,
             areas,
             kernel_start: Frame::containing_address(kernel_start),
@@ -84,7 +84,5 @@ impl FrameAllocator for AreaAllocator {
         None
     }
 
-    fn deallocate_frame(&mut self, frame: Frame) {
-        unimplemented!()
-    }
+    fn deallocate_frame(&mut self, _frame: Frame) {}
 }

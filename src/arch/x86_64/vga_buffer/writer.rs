@@ -1,13 +1,20 @@
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
 
+use crate::mem::PhysicalAddress;
+
 use super::character::{ColourCode, ScreenChar};
 use core::fmt;
 
 struct Buffer;
 
 impl Buffer {
-    const VGA_BUFFER: *mut ScreenChar = 0xb8000 as *mut ScreenChar;
+    const VGA_BUFFER: *mut ScreenChar = unsafe {
+        PhysicalAddress::new(0xb8000)
+            .to_virt()
+            .unwrap()
+            .as_mut_ptr()
+    };
 
     unsafe fn get_addr(row: usize, col: usize) -> *mut ScreenChar {
         unsafe { Self::VGA_BUFFER.add(row * BUFFER_WIDTH + col) }

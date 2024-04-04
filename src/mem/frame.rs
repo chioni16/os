@@ -8,11 +8,17 @@ pub struct Frame {
 impl Frame {
     pub fn containing_address(address: PhysicalAddress) -> Frame {
         Frame {
-            number: address / PAGE_SIZE,
+            number: address.to_inner() / PAGE_SIZE,
         }
     }
 
     pub fn start_address(&self) -> PhysicalAddress {
-        self.number * PAGE_SIZE
+        PhysicalAddress::new(self.number * PAGE_SIZE)
+    }
+
+    fn clone(&self) -> Frame {
+        Frame {
+            number: self.number,
+        }
     }
 }

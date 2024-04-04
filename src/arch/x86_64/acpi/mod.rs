@@ -3,6 +3,8 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
+use crate::mem::PhysicalAddress;
+
 const RSDP_SIGNATURE: &[u8] = b"RSD PTR "; // notice the space at the end
 
 // only supports V1 for now
@@ -109,7 +111,12 @@ impl RsdtEntries {
     pub(super) fn find_madt(&self) -> Option<AcpiSdt> {
         self.0
             .iter()
-            .map(|addr| *addr as *const AcpiSdtHeader)
+            .map(|addr| unsafe {
+                PhysicalAddress::new(*addr as u64)
+                    .to_virt()
+                    .unwrap()
+                    .as_ref_static() as *const AcpiSdtHeader
+            })
             .find(|addr| {
                 let table = unsafe { &**addr };
                 &table.signature == b"APIC"
@@ -210,14 +217,34 @@ impl AcpiSdt {
 pub(super) fn find_rsdt() -> Option<AcpiSdt> {
     // version 2 is not supported as of yet
     find_rsdp()
-        .and_then(|rsdp| AcpiSdt::new(rsdp.rsdt_addr as *const AcpiSdtHeader))
+        .and_then(|rsdp| {
+            let rsdt_addr = unsafe {
+                PhysicalAddress::new(rsdp.rsdt_addr as u64)
+                    .to_virt()
+                    .unwrap()
+                    .as_ref_static() as *const AcpiSdtHeader
+            };
+            AcpiSdt::new(rsdt_addr)
+        })
         .filter(|a| matches!(a.fields, AcpiSdtType::Rsdt(_)))
 }
 
 fn find_rsdp() -> Option<&'static Rsdp> {
     // TODO: Extended BIOS Data Area (EBDA)
     // the main BIOS area below 1 MB
-    scan_memory_for_rsdp(0x000E0000 as *const u8, 0x000FFFFF as *const u8)
+    let start = unsafe {
+        PhysicalAddress::new(0x000E0000)
+            .to_virt()
+            .unwrap()
+            .as_const_ptr()
+    };
+    let end = unsafe {
+        PhysicalAddress::new(0x000FFFFF)
+            .to_virt()
+            .unwrap()
+            .as_const_ptr()
+    };
+    scan_memory_for_rsdp(start, end)
 }
 
 fn scan_memory_for_rsdp(mut start: *const u8, end: *const u8) -> Option<&'static Rsdp> {

@@ -1,4 +1,4 @@
-mod area_allocator;
+pub mod area_allocator;
 
 use super::frame::Frame;
 

@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(naked_functions)]
+#![feature(const_option)]
 
 
 mod arch;

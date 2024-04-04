@@ -1,78 +1,42 @@
-mod entry;
+use crate::mem::{PhysicalAddress, VirtualAddress};
+
+extern crate alloc;
+use alloc::boxed::Box;
+
+pub mod entry;
+mod page;
 mod table;
 
-use crate::mem::{
-    allocator::FrameAllocator, frame::Frame, PhysicalAddress, VirtualAddress, PAGE_SIZE,
-};
-use entry::EntryFlags;
-use table::P4;
+pub use table::Table;
 
-const PAGE_ENTRY_SIZE: u64 = 8;
-const PAGE_ENTRY_COUNT: u64 = PAGE_SIZE / PAGE_ENTRY_SIZE;
+pub unsafe fn get_current_page_table() -> &'static mut Table {
+    let mut p4: u64;
+    core::arch::asm!("mov rax, cr3", out("rax") p4);
 
-pub fn translate(virtual_address: VirtualAddress) -> Option<PhysicalAddress> {
-    let offset = virtual_address % PAGE_SIZE;
-    translate_page(Page::containing_address(virtual_address))
-        .map(|frame| frame.number * PAGE_SIZE + offset)
+    PhysicalAddress::new(p4).to_virt().unwrap().as_mut_static()
 }
 
-fn translate_page(page: Page) -> Option<Frame> {
-    let p3 = unsafe { &*table::P4 }.next_table(page.p4_index());
+// SAFETY: only pass a p4 table
+pub unsafe fn switch_current_page_table(new_p4: Box<Table>) -> PhysicalAddress {
+    let old_p4 = get_current_page_table();
 
-    let huge_page = || {
-        // TODO
-        todo!()
-    };
+    let new_p4_virtual = VirtualAddress::new(&*new_p4 as *const _ as u64);
+    let new_p4_physical = old_p4.translate(new_p4_virtual).unwrap();
 
-    p3.and_then(|p3| p3.next_table(page.p3_index()))
-        .and_then(|p2| p2.next_table(page.p2_index()))
-        .and_then(|p1| p1[page.p1_index()].pointed_frame())
-        .or_else(huge_page)
+    let old_p4_physical;
+    core::arch::asm!(
+        "mov {old_phys}, cr3",
+        "mov cr3, {new_phys}",
+        new_phys = in(reg) new_p4_physical.to_inner(),
+        old_phys = out(reg) old_p4_physical,
+    );
+
+    PhysicalAddress::new(old_p4_physical)
 }
 
-pub struct Page {
-    number: u64,
-}
-
-impl Page {
-    pub fn containing_address(address: VirtualAddress) -> Page {
-        assert!(
-            address < 0x0000_8000_0000_0000 || address >= 0xffff_8000_0000_0000,
-            "invalid address: 0x{:x}",
-            address
-        );
-        Page {
-            number: address / PAGE_SIZE,
-        }
-    }
-
-    fn start_address(&self) -> VirtualAddress {
-        self.number * PAGE_SIZE
-    }
-
-    fn p4_index(&self) -> usize {
-        (self.number as usize >> 27) & 0o777
-    }
-    fn p3_index(&self) -> usize {
-        (self.number as usize >> 18) & 0o777
-    }
-    fn p2_index(&self) -> usize {
-        (self.number as usize >> 9) & 0o777
-    }
-    fn p1_index(&self) -> usize {
-        (self.number as usize >> 0) & 0o777
-    }
-}
-
-pub fn map_to<A>(page: Page, frame: Frame, flags: EntryFlags, allocator: &mut A)
-where
-    A: FrameAllocator,
-{
-    let p4 = unsafe { &mut *P4 };
-    let mut p3 = p4.next_table_create(page.p4_index(), allocator);
-    let mut p2 = p3.next_table_create(page.p3_index(), allocator);
-    let mut p1 = p2.next_table_create(page.p2_index(), allocator);
-
-    assert!(p1[page.p1_index()].is_unused());
-    p1[page.p1_index()].set(frame, flags | EntryFlags::PRESENT);
+pub unsafe fn translate_using_current_page_table(
+    virt_addr: VirtualAddress,
+) -> Option<PhysicalAddress> {
+    let pt = get_current_page_table();
+    pt.translate(virt_addr)
 }

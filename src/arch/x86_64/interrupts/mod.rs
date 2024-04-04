@@ -100,10 +100,10 @@ macro_rules! handler_with_error_code {
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
-        idt.add_handler(0, handler!(divide_by_zero));
-        idt.add_handler(3, handler!(breakpoint));
-        idt.add_handler(6, handler!(invalid_opcode));
-        idt.add_handler(14, handler_with_error_code!(page_fault));
+        idt.add_handler(0x0, handler!(divide_by_zero));
+        idt.add_handler(0x3, handler!(breakpoint));
+        idt.add_handler(0x6, handler!(invalid_opcode));
+        idt.add_handler(0xe, handler_with_error_code!(page_fault));
 
         idt.add_handler(0x20, handler!(timer));
         idt.add_handler(0x21, handler!(keyboard));

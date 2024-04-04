@@ -1,6 +1,7 @@
+use core::marker::PhantomData;
 use core::ptr;
 
-use crate::mem::PhysicalAddress;
+use crate::mem::{PhysicalAddress, VirtualAddress};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
@@ -8,7 +9,7 @@ pub struct Elf64SectionHeader {
     sh_name: u32,
     sh_type: u32,
     sh_flags: u64,
-    sh_addr: PhysicalAddress,
+    sh_addr: u64,
     sh_offset: u64,
     sh_size: u64,
     sh_link: u32,
@@ -22,8 +23,8 @@ impl Elf64SectionHeader {
         self.sh_type
     }
 
-    pub fn base_addr(&self) -> PhysicalAddress {
-        self.sh_addr
+    pub fn base_addr(&self) -> VirtualAddress {
+        VirtualAddress::new(self.sh_addr)
     }
 
     pub fn size(&self) -> u64 {
@@ -38,7 +39,7 @@ impl Elf64SectionHeader {
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct MemMapEntry {
-    base_addr: PhysicalAddress,
+    base_addr: u64,
     length: u64,
     entry_type: u32,
     reserved: u32,
@@ -46,15 +47,16 @@ pub struct MemMapEntry {
 
 impl MemMapEntry {
     pub fn start(&self) -> PhysicalAddress {
-        self.base_addr
+        PhysicalAddress::new(self.base_addr)
     }
 
     pub fn length(&self) -> u64 {
         self.length
     }
 
+    // last address that belongs to the entry
     pub fn end(&self) -> PhysicalAddress {
-        self.base_addr + self.length - 1
+        self.start().offset(self.length - 1)
     }
 
     pub fn entry_type(&self) -> MemMapEntryType {
@@ -87,9 +89,10 @@ impl TryFrom<u32> for MemMapEntryType {
 
 #[derive(Debug, Clone)]
 pub struct MultibootIter<T> {
-    start: *const T,
+    start: VirtualAddress,
     cur: u32,
     total_size: u32,
+    _marker: PhantomData<T>,
 }
 
 impl<T> Iterator for MultibootIter<T> {
@@ -104,7 +107,7 @@ impl<T> Iterator for MultibootIter<T> {
         // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
         // start to start + size
         let entry = unsafe {
-            let addr = self.start.byte_add(self.cur as usize);
+            let addr = self.start.offset(self.cur as u64).as_const_ptr();
             ptr::read_unaligned(addr)
         };
 
@@ -120,13 +123,14 @@ pub struct MultibootInfo {
 }
 
 impl MultibootInfo {
-    pub fn new(addr: PhysicalAddress) -> Self {
+    pub fn new(addr: u64) -> Self {
+        let base = PhysicalAddress::new(addr);
         Self {
-            base: addr,
+            base,
             // SAFETY:
             // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
             // start to start + size
-            size: unsafe { ptr::read_unaligned(addr as *const u32) },
+            size: unsafe { ptr::read_unaligned(base.to_virt().unwrap().as_const_ptr()) },
         }
     }
 
@@ -138,26 +142,28 @@ impl MultibootInfo {
         self.size as u64
     }
 
+    // last address that belongs to MultibootInfo
     pub fn end(&self) -> PhysicalAddress {
-        self.base + self.size as u64
+        self.base.offset(self.size() - 1)
     }
 
-    fn find_tags_of_type(&self, tag_type: u32) -> Option<(PhysicalAddress, u32)> {
-        let addr = self.base;
+    fn find_tags_of_type(&self, tag_type: u32) -> Option<(VirtualAddress, u32)> {
+        let addr = unsafe { self.base.to_virt().unwrap() };
         // SAFETY:
         // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
         // start to start + size
         unsafe {
-            let total_length = ptr::read_unaligned(addr as *const u32);
-            assert_eq!(ptr::read_unaligned((addr + 4) as *const u32), 0);
-
+            let total_length = ptr::read_unaligned(addr.as_const_ptr());
+            assert_eq!(ptr::read_unaligned(addr.offset(4).as_const_ptr::<u32>()), 0);
             let mut cur_len = 8u32;
             while cur_len < total_length {
-                let cur_type = ptr::read_unaligned((addr + cur_len as u64) as *const u32);
-                let cur_size = ptr::read_unaligned((addr + cur_len as u64 + 4) as *const u32);
+                let cur_type =
+                    ptr::read_unaligned(addr.offset(cur_len as u64).as_const_ptr::<u32>());
+                let cur_size =
+                    ptr::read_unaligned(addr.offset(cur_len as u64 + 4).as_const_ptr::<u32>());
 
                 if cur_type == tag_type {
-                    let start_addr = addr + cur_len as u64;
+                    let start_addr = addr.offset(cur_len as u64);
                     return Some((start_addr, cur_size));
                 }
 
@@ -187,7 +193,7 @@ impl MultibootInfo {
             // start to start + size
             unsafe {
                 // consider padding
-                let entry_size = ptr::read_unaligned((start_addr + 12) as *const u16);
+                let entry_size = ptr::read_unaligned(start_addr.offset(12).as_const_ptr::<u16>());
                 assert_eq!(
                     entry_size as usize,
                     core::mem::size_of::<Elf64SectionHeader>()
@@ -195,9 +201,10 @@ impl MultibootInfo {
             }
 
             MultibootIter {
-                start: start_addr as *const Elf64SectionHeader,
+                start: start_addr,
                 cur: 20,
                 total_size,
+                _marker: PhantomData,
             }
         })
     }
@@ -209,16 +216,20 @@ impl MultibootInfo {
             // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
             // start to start + size
             unsafe {
-                let entry_size = ptr::read_unaligned((start_addr + 8) as *const u32);
+                let entry_size = ptr::read_unaligned(start_addr.offset(8).as_const_ptr::<u32>());
                 assert_eq!(entry_size as usize, core::mem::size_of::<MemMapEntry>());
                 // supports only entry_version 0
-                assert_eq!(ptr::read_unaligned((start_addr + 12) as *const u32), 0);
+                assert_eq!(
+                    ptr::read_unaligned(start_addr.offset(12).as_const_ptr::<u32>()),
+                    0
+                );
             }
 
             MultibootIter {
-                start: start_addr as *const MemMapEntry,
+                start: start_addr,
                 cur: 16,
                 total_size,
+                _marker: PhantomData,
             }
         })
     }
