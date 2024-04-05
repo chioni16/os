@@ -10,7 +10,7 @@ use core::ops::{Index, IndexMut};
 const PAGE_ENTRY_COUNT: u64 = PAGE_SIZE / PAGE_ENTRY_SIZE;
 
 #[derive(Debug)]
-#[repr(transparent)]
+#[repr(align(4096))]
 pub struct Table {
     entries: [Entry; PAGE_ENTRY_COUNT as usize],
 }

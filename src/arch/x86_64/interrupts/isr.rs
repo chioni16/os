@@ -77,7 +77,6 @@ fn disable_interrupts() {
 fn without_interrupts<R, F: FnOnce() -> R>(f: F) -> R {
     let int_enabled = is_int_enabled();
     if int_enabled {
-        crate::println!("hello");
         disable_interrupts();
     }
     let ret = f();

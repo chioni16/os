@@ -1,3 +1,4 @@
+use bitflags::bitflags;
 use core::marker::PhantomData;
 use core::ptr;
 
@@ -18,12 +19,29 @@ pub struct Elf64SectionHeader {
     sh_entsize: u64,
 }
 
+bitflags! {
+    pub struct Elf64SectionFlags: u64 {
+        const SHF_WRITE      = 0x1;
+        const SHF_ALLOC      = 0x2;
+        const SHF_EXECINSTR  = 0x4;
+        const SHF_MERGE      = 0x10;
+        const SHF_STRINGS    = 0x20;
+        const SHF_INFO_LINK  = 0x40;
+        const SHF_LINK_ORDER = 0x80;
+        const SHF_OS_NONCONFORMING = 0x100;
+        const SHF_GROUP      = 0x200;
+        const SHF_TLS        = 0x400;
+        const SHF_MASKOS     = 0x0ff00000;
+        const SHF_MASKPROC   = 0xf0000000;
+    }
+}
+
 impl Elf64SectionHeader {
     pub fn section_type(&self) -> u32 {
         self.sh_type
     }
 
-    pub fn base_addr(&self) -> VirtualAddress {
+    pub fn start(&self) -> VirtualAddress {
         VirtualAddress::new(self.sh_addr)
     }
 
@@ -31,8 +49,17 @@ impl Elf64SectionHeader {
         self.sh_size
     }
 
-    pub fn flags(&self) -> u64 {
-        self.sh_flags
+    // last address that belongs to the entry
+    pub fn end(&self) -> VirtualAddress {
+        self.start().offset(self.size() - 1)
+    }
+
+    pub fn flags(&self) -> Elf64SectionFlags {
+        Elf64SectionFlags::from_bits_truncate(self.sh_flags)
+    }
+
+    pub fn contains(&self, addr: VirtualAddress) -> bool {
+        self.start() <= addr && addr <= self.end()
     }
 }
 
@@ -60,30 +87,28 @@ impl MemMapEntry {
     }
 
     pub fn entry_type(&self) -> MemMapEntryType {
-        self.entry_type().try_into().unwrap()
+        self.entry_type.into()
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MemMapEntryType {
-    Ram = 1,
-    Acpi = 3,
-    Preserved = 4,
-    DefectiveRam = 5,
+    Ram,
+    Acpi,
+    Preserved,
+    DefectiveRam,
+    Other(u32),
 }
 
-impl TryFrom<u32> for MemMapEntryType {
-    type Error = ();
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        let mmet = match value {
+impl From<u32> for MemMapEntryType {
+    fn from(value: u32) -> Self {
+        match value {
             1 => Self::Ram,
             3 => Self::Acpi,
             4 => Self::Preserved,
             5 => Self::DefectiveRam,
-            _ => return Err(()),
-        };
-
-        Ok(mmet)
+            o => Self::Other(o),
+        }
     }
 }
 

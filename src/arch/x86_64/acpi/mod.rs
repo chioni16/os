@@ -208,9 +208,8 @@ impl AcpiSdt {
                 return None;
             }
         };
-        let a = Some(Self { header, fields });
-        // crate::println!("ACPI end: {:?}", a);
-        a
+
+        Some(Self { header, fields })
     }
 }
 

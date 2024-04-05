@@ -117,7 +117,6 @@ impl Pic {
         let irq = Mask::from_bits(1 << irq).unwrap();
         let mask = Mask::from_bits(self.data.read()).unwrap();
         let data = mask - irq;
-        crate::println!("clear: {:?}", data);
         self.data.write((data).bits());
     }
 

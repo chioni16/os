@@ -5,12 +5,12 @@ HIGHER_HALF = 0xC0000000;
 
 SECTIONS {
     . = 1M;
-    .boot :
+    . += HIGHER_HALF;
+
+    .boot ALIGN (4K) : AT (ADDR (.boot) - HIGHER_HALF)
     {
         *(.multiboot_header)
     }
-    
-    . += HIGHER_HALF;
 
     .text ALIGN (4K) : AT (ADDR (.text) - HIGHER_HALF)
     {

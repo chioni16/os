@@ -16,7 +16,7 @@ all: ${bin_dir}/os.iso
 	-monitor stdio \
 	-d int \
 	-no-reboot -no-shutdown \
-	-m 1G \
+	-m 4G \
 	-serial file:/tmp/serial \
 	-s -S
 

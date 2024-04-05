@@ -1,4 +1,5 @@
 pub mod area_allocator;
+pub mod bitmap_allocator;
 
 use super::frame::Frame;
 
