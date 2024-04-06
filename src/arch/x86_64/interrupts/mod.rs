@@ -6,6 +6,7 @@ use lazy_static::lazy_static;
 use paste::paste;
 
 use isr::*;
+pub use isr::{disable_interrupts, enable_interrupts, is_int_enabled};
 
 macro_rules! handler {
     ($int: ident) => {{

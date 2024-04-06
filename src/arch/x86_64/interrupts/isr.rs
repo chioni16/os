@@ -48,7 +48,7 @@ pub(super) struct InterruptStackFrame {
 // }
 
 #[inline]
-fn is_int_enabled() -> bool {
+pub fn is_int_enabled() -> bool {
     let flags: u64;
     unsafe {
         core::arch::asm!(
@@ -61,14 +61,14 @@ fn is_int_enabled() -> bool {
 }
 
 #[inline]
-fn enable_interrupts() {
+pub fn enable_interrupts() {
     unsafe {
         core::arch::asm!("sti");
     }
 }
 
 #[inline]
-fn disable_interrupts() {
+pub fn disable_interrupts() {
     unsafe {
         core::arch::asm!("cli");
     }

@@ -6,6 +6,7 @@ mod pic;
 mod port;
 mod vga_buffer;
 
+pub(crate) use interrupts::{disable_interrupts, enable_interrupts, is_int_enabled};
 pub(crate) use paging::translate_using_current_page_table;
 pub(crate) use vga_buffer::_print;
 
