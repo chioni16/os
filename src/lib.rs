@@ -19,17 +19,29 @@ static HEAP_ALLOCATOR: SpinLock<BitMapAllocator> = BitMapAllocator::locked();
 extern "C" {
     static stack_bottom: u8;
     static stack_top: u8;
+    static HIGHER_HALF: u8;
 }
+
+// static mut HIGHER_HALF_ADDRESS: u64 = 0x0;
 
 #[no_mangle]
 pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
     unsafe {
         println!("top: {:#x?}", addr_of!(stack_top));
         println!("bottom: {:#x?}", addr_of!(stack_bottom));
+        println!("higher half: {:#x?}", addr_of!(HIGHER_HALF));
     }
-    println!("Hello!: {:#x}", multiboot_addr);
 
+    // unsafe {
+    //     HIGHER_HALF_ADDRESS = core::ptr::addr_of!(crate::HIGHER_HALF) as u64;
+    //     crate::println!("ptr: {:#x}", HIGHER_HALF_ADDRESS);
+    // }
+
+    println!("Hello!: {:#x}", multiboot_addr);
     let multiboot_info = multiboot::MultibootInfo::new(multiboot_addr);
+    HEAP_ALLOCATOR.lock().init(&multiboot_info);
+    arch::init();
+    crate::println!("init done");
 
     // let a: u64 = 0;
     // unsafe {
@@ -37,11 +49,6 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
     // }
 
     // unsafe { core::arch::asm!("ud2") };
-
-    HEAP_ALLOCATOR.lock().init(&multiboot_info);
-    arch::init();
-
-    crate::println!("init done");
 
     unsafe {
         core::arch::asm!("int 3");

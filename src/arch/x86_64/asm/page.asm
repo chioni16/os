@@ -2,7 +2,6 @@ default rel
 
 extern low_p4_table
 extern low_p3_table
-extern low_p2_table
 
 global set_up_page_tables
 global enable_paging
@@ -10,34 +9,12 @@ global enable_paging
 section .text
 bits 32
 set_up_page_tables:
-    ; experiment start
-
-    ;; map first P4 entry to P3 table
-    ;mov eax, low_p3_table
-    ;or eax, 0b11 ; present + writable
-    ;mov [low_p4_table], eax
-
-    ;; map 4GiB of physical memory (if this value is changed, remember change the value in to_virt method of PhysicalAddress as well)
-    ;mov eax, 0
-    ;or eax, 0b10000011 ; present + writable + huge (1 GiB)
-    ;mov [low_p3_table], eax
-    ;; mov [low_p3_table + 8], eax
-    ;; mov [low_p3_table + 16], eax
-    ;mov [low_p3_table + 24], eax
-    ;add eax, 0x40000000
-    ;mov [low_p3_table + 32], eax
-    ;add eax, 0x40000000
-    ;mov [low_p3_table + 40], eax
-    ;add eax, 0x40000000
-    ;mov [low_p3_table + 48], eax
-
-    ; experiment first part end
-
     ; map first P4 entry to P3 table
     mov eax, low_p3_table
     or eax, 0b11 ; present + writable
     mov [low_p4_table], eax
 
+    ; map higher address space as well
     mov [low_p4_table + 0x100 * 8], eax
 
     ; map 4GiB of physical memory (if this value is changed, remember change the value in to_virt method of PhysicalAddress as well)
@@ -50,8 +27,6 @@ set_up_page_tables:
     mov [low_p3_table + 16], eax
     add eax, 0x40000000
     mov [low_p3_table + 24], eax
-
-    ; experiment second part end
 
     ret
 

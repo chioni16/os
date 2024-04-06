@@ -1,10 +1,9 @@
 ENTRY(start)
 
 HIGHER_HALF = 0xFFFF800000000000;
-/* HIGHER_HALF = 0xC0000000; */
 
 /* 
-*
+* TODO:
 * WARNING: This may have to be modified when the kernel page table uses the segment permissions.
 * At the moment, everything works as all the pages are mapped with RWX permissions 
 *

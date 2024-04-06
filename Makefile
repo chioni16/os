@@ -4,7 +4,7 @@ asm_src_files := $(wildcard ${asm_src_dir}/*.asm)
 bin_dir := target/bin
 asm_obj_files := $(patsubst ${asm_src_dir}/%.asm, ${bin_dir}/%.o, ${asm_src_files})
 rust_bin := target/x86_64-unknown-none/debug/libos.a
-conf_dir := src/config
+conf_dir := config
 iso_dir := target/isofiles
 kernel := ${bin_dir}/kernel
 

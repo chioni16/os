@@ -3,49 +3,31 @@ default rel
 extern check_multiboot
 extern check_cpuid
 extern check_long_mode
-
 extern set_up_page_tables
 extern enable_paging
 extern long_mode_start
 
-global HIGHER_HALF
-
 global start
 global error
-
 global p4_table
 global p3_table
-global p2_table
 global low_p4_table
 global low_p3_table
-global low_p2_table
-global HIGHER_HALF
 global gdt64_pointer
 
+; for debugging purposes
 global stack_bottom
 global stack_top
 
-;HIGHER_HALF: equ 0xC0000000
-;low_stack_top: equ  stack_top - 0xC0000000
-;low_stack_bottom: equ  stack_bottom - 0xC0000000
-;low_p4_table: equ  p4_table - 0xC0000000
-;low_p3_table: equ  p3_table - 0xC0000000
-;low_p2_table: equ  p2_table - 0xC0000000
-;low_gdt64_pointer: equ  gdt64_pointer - 0xC0000000
-;low_gdt64_code: equ  gdt64.code - 0xC0000000
-;low_long_mode_start: equ long_mode_start - 0xC0000000
-
+; TODO can I get this from the linker script? extern doesn't seem to be working as intended
 HIGHER_HALF: equ 0xFFFF800000000000
-low_stack_top: equ  stack_top - 0xFFFF800000000000
-low_stack_bottom: equ  stack_bottom - 0xFFFF800000000000
-low_p4_table: equ  p4_table - 0xFFFF800000000000
-low_p3_table: equ  p3_table - 0xFFFF800000000000
-low_p2_table: equ  p2_table - 0xFFFF800000000000
-low_gdt64_pointer: equ  gdt64_pointer - 0xFFFF800000000000
-low_gdt64_code: equ  gdt64.code - 0xFFFF800000000000
-low_long_mode_start: equ long_mode_start - 0xFFFF800000000000
-
-
+low_stack_top: equ  stack_top - HIGHER_HALF
+low_stack_bottom: equ  stack_bottom - HIGHER_HALF
+low_p4_table: equ  p4_table - HIGHER_HALF
+low_p3_table: equ  p3_table - HIGHER_HALF
+low_gdt64_pointer: equ  gdt64_pointer - HIGHER_HALF
+low_gdt64_code: equ  gdt64.code - HIGHER_HALF
+low_long_mode_start: equ long_mode_start - HIGHER_HALF
 
 section .text
 bits 32
@@ -62,24 +44,7 @@ start:
 
     lgdt [low_gdt64_pointer]
 
-    ; experiment start
-
-    ;; point rsp, rip to higher half addresses
-    ;add esp, HIGHER_HALF
-    ;mov eax, higher_half_addresses
-    ;jmp eax
-    ;higher_half_addresses:
-    ;; clear identity mapping that we will not use anymore after moving to higher half addresses
-    ;mov dword [low_p3_table], 0x0
-
-    ;pop ebx
-    ;jmp gdt64.code:long_mode_start
-
-    ; experiment first part end
-
-    jmp low_gdt64_code:low_long_mode_start
-
-    ; experiment second part end
+    jmp low_gdt64_code:low_long_mode_start ; enter long mode
 
 error:
     mov dword [0xb8000], 0x4f524f45
@@ -92,8 +57,6 @@ section .bss
 p4_table:
     resb 4096
 p3_table:
-    resb 4096
-p2_table:
     resb 4096
 stack_bottom:
     resb 64*1024*1024
