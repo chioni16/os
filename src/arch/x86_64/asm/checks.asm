@@ -1,12 +1,13 @@
+default rel
+
 extern error
 
 global check_multiboot
 global check_cpuid
 global check_long_mode
 
-bits 32
-
 section .text
+bits 32
 
 check_multiboot:
     cmp eax, 0x36d76289

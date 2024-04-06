@@ -53,8 +53,8 @@ impl BitMapAllocator {
             .clone()
             .filter(|region| region.entry_type() != MemMapEntryType::Ram);
 
-        // can report more than the available number of pages due to double counting at continuous region boundaries
-        // so just gives a rough idea most of the times
+        // works as intended when the sections are paage aligned
+        // if not, can report more than the available number of pages due to double counting at continuous non-page aligned region boundaries
         let num_pages_in_region = |region: MemMapEntry| region.length().div_ceil(PAGE_SIZE);
         let usable_pages = ram_regions.clone().map(num_pages_in_region).sum::<u64>();
         let reserved_pages = non_ram_regions
@@ -123,9 +123,7 @@ impl BitMapAllocator {
                 start..end
             })
             .flatten()
-            .for_each(|frame| {
-                bitmap.set(frame as usize)
-            });
+            .for_each(|frame| bitmap.set(frame as usize));
 
         elf_sections
             .clone()
@@ -144,8 +142,8 @@ impl BitMapAllocator {
             .flatten()
             .for_each(|frame| bitmap.set(frame as usize));
 
-        let bitmap_frame = Frame::containing_address(bit_map_start_addr).number ;
-        for frame in bitmap_frame..bitmap_frame+bitmap_size_in_pages {
+        let bitmap_frame = Frame::containing_address(bit_map_start_addr).number;
+        for frame in bitmap_frame..bitmap_frame + bitmap_size_in_pages {
             bitmap.set(frame as usize);
         }
 

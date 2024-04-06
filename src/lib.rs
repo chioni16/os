@@ -9,8 +9,8 @@ mod mem;
 mod multiboot;
 
 use core::{ops::Deref, ptr::addr_of};
-use mem::allocator::bitmap_allocator::BitMapAllocator;
 use locks::SpinLock;
+use mem::allocator::bitmap_allocator::BitMapAllocator;
 
 #[global_allocator]
 static HEAP_ALLOCATOR: SpinLock<BitMapAllocator> = BitMapAllocator::locked();
@@ -39,6 +39,8 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
 
     HEAP_ALLOCATOR.lock().init(&multiboot_info);
     arch::init();
+
+    crate::println!("init done");
 
     unsafe {
         core::arch::asm!("int 3");

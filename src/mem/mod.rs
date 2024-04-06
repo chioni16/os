@@ -3,7 +3,8 @@ pub mod frame;
 
 pub const PAGE_SIZE: u64 = 4096;
 // 3 GiB
-const HIGHER_HALF: u64 = 0xC0000000;
+// const HIGHER_HALF: u64 = 0xC0000000;
+const HIGHER_HALF: u64 = 0xFFFF800000000000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PhysicalAddress(u64);
