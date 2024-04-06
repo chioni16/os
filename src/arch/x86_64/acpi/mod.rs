@@ -36,9 +36,9 @@ pub(super) struct AcpiSdtHeader {
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub(super) struct LocalApic {
-    pid: u8,
-    aid: u8,
-    flags: u32,
+    pub pid: u8,
+    pub aid: u8,
+    pub flags: u32,
 }
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
@@ -172,6 +172,7 @@ impl AcpiSdt {
                 while cur_len < header.length as usize {
                     let entry_type = unsafe { *(addr.byte_add(cur_len) as *const u8) };
                     let record_len = unsafe { *(addr.byte_add(cur_len + 1) as *const u8) };
+                    cur_len += 2;
 
                     let entry = match entry_type {
                         0 => madt_type!(LocalApic, addr, cur_len),
@@ -186,7 +187,7 @@ impl AcpiSdt {
                             None
                         }
                     };
-                    cur_len += record_len as usize;
+                    cur_len += record_len as usize - 2;
 
                     if let Some(entry) = entry {
                         entries.push(entry);

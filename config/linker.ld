@@ -11,6 +11,7 @@ HIGHER_HALF = 0xFFFF800000000000;
 
 PHDRS {
     boot    PT_LOAD    FLAGS((1 << 2)) ;            /* Read only */
+    ap_text PT_LOAD    FLAGS((1 << 0) | (1 << 2)) ; /* Execute + Read */
     text    PT_LOAD    FLAGS((1 << 0) | (1 << 2)) ; /* Execute + Read */
     rodata  PT_LOAD    FLAGS((1 << 2)) ;            /* Read only */
     data    PT_LOAD    FLAGS((1 << 1) | (1 << 2)) ; /* Write + Read */
@@ -18,8 +19,15 @@ PHDRS {
 }
 
 SECTIONS {
-    . = 1M;
-    . += HIGHER_HALF;
+    . = HIGHER_HALF;
+    
+    .text.ap ALIGN (4K) : AT (ADDR (.text.ap) - HIGHER_HALF)
+    {
+        _ap_start_location = .;
+        *(.text.ap)
+    } :ap_text
+
+    . = HIGHER_HALF + 1M;
 
     .boot ALIGN (4K) : AT (ADDR (.boot) - HIGHER_HALF)
     {

@@ -11,12 +11,13 @@ kernel := ${bin_dir}/kernel
 .PHONY: all
 all: ${bin_dir}/os.iso
 	qemu-system-x86_64 -boot d -cdrom target/bin/os.iso \
+	-m 4G \
+	-smp 4 \
 	-netdev user,id=n1,hostfwd=tcp::5555-:22 -device rtl8139,netdev=n1 \
 	-object filter-dump,id=f1,netdev=n1,file=/tmp/dump.pcap \
 	-monitor stdio \
-	-d int \
+	-d trace:apic_mem_writel \
 	-no-reboot -no-shutdown \
-	-m 4G \
 	-serial file:/tmp/serial \
 	-s -S
 

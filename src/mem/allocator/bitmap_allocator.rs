@@ -146,6 +146,9 @@ impl BitMapAllocator {
         for frame in bitmap_frame..bitmap_frame + bitmap_size_in_pages {
             bitmap.set(frame as usize);
         }
+        for frame in 0..256 {
+            bitmap.set(frame as usize);
+        }
 
         self.bitmap = Some(bitmap);
         self.num_pages = bitmap_size_in_bits as usize;

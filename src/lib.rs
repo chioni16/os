@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(naked_functions)]
 #![feature(const_option)]
+#![feature(core_intrinsics)]
 
 mod arch;
 mod locks;
