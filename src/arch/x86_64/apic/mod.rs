@@ -1,5 +1,5 @@
-use crate::arch::x86_64::{rdmsr, wrmsr};
 use super::pic;
+use crate::arch::x86_64::{rdmsr, wrmsr};
 use core::arch::x86_64::CpuidResult;
 
 pub(super) const MSR_APIC_REG_BASE: u32 = 0x1b;

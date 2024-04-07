@@ -6,7 +6,7 @@
 
 mod arch;
 mod locks;
-mod log;
+mod logging;
 mod mem;
 mod multiboot;
 
@@ -16,6 +16,17 @@ use mem::allocator::bitmap_allocator::BitMapAllocator;
 
 #[global_allocator]
 static HEAP_ALLOCATOR: SpinLock<BitMapAllocator> = BitMapAllocator::locked();
+
+use log::LevelFilter;
+use logging::Logger;
+static LOGGER: Logger = Logger;
+
+// Weird behaviour:
+// before call rust_start:
+// ffff800004212000: 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00
+// after call rust_start:
+// ffff800004212000: 0x00 0x80 0xff 0xff 0x00 0x00 0x00 0x00
+static HEAP_ALLOCATOR2: SpinLock<BitMapAllocator> = BitMapAllocator::locked();
 
 extern "C" {
     static stack_bottom: u8;
@@ -27,6 +38,10 @@ extern "C" {
 
 #[no_mangle]
 pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
+    log::set_logger(&LOGGER)
+        .map(|()| log::set_max_level(LevelFilter::Info))
+        .unwrap();
+
     unsafe {
         println!("top: {:#x?}", addr_of!(stack_top));
         println!("bottom: {:#x?}", addr_of!(stack_bottom));
@@ -40,6 +55,7 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
 
     println!("Hello!: {:#x}", multiboot_addr);
     let multiboot_info = multiboot::MultibootInfo::new(multiboot_addr);
+    // HEAP_ALLOCATOR2.lock().init(&multiboot_info);
     HEAP_ALLOCATOR.lock().init(&multiboot_info);
     arch::init();
     crate::println!("init done");
