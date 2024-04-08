@@ -1,42 +1,38 @@
-use crate::mem::{PhysicalAddress, VirtualAddress};
-
-extern crate alloc;
-use alloc::boxed::Box;
-
 pub mod entry;
 mod page;
 mod table;
 
-pub use table::Table;
+use entry::EntryFlags;
+use log::trace;
+pub use table::{ActiveP4Table, P4Table};
 
-pub unsafe fn get_current_page_table() -> &'static mut Table {
-    let mut p4: u64;
-    core::arch::asm!("mov rax, cr3", out("rax") p4);
+use crate::{
+    locks::SpinLock,
+    mem::{PhysicalAddress, VirtualAddress},
+};
 
-    PhysicalAddress::new(p4).to_virt().unwrap().as_mut_static()
-}
+pub static ACTIVE_PAGETABLE: SpinLock<ActiveP4Table> = ActiveP4Table::locked();
 
-// SAFETY: only pass a p4 table
-pub unsafe fn switch_current_page_table(new_p4: Box<Table>) -> PhysicalAddress {
-    let old_p4 = get_current_page_table();
-
-    let new_p4_virtual = VirtualAddress::new(&*new_p4 as *const _ as u64);
-    let new_p4_physical = old_p4.translate(new_p4_virtual).unwrap();
-
-    let old_p4_physical;
-    core::arch::asm!(
-        "mov {old_phys}, cr3",
-        "mov cr3, {new_phys}",
-        new_phys = in(reg) new_p4_physical.to_inner(),
-        old_phys = out(reg) old_p4_physical,
+pub(super) fn init() {
+    trace!("before new_table init");
+    let mut new_page_table = P4Table::new();
+    trace!("after new_table init");
+    let virt_addr = VirtualAddress::new(0xf000000000);
+    let phys_addr = PhysicalAddress::new(0xfffffff);
+    trace!("before new_table map");
+    new_page_table.map(
+        virt_addr,
+        phys_addr,
+        EntryFlags::PRESENT | EntryFlags::WRITABLE,
     );
+    trace!("after new_table map");
 
-    PhysicalAddress::new(old_p4_physical)
+    trace!("before new_table unmapping");
+    new_page_table.unmap(virt_addr);
+    trace!("after new_table unmapping");
 }
 
-pub unsafe fn translate_using_current_page_table(
-    virt_addr: VirtualAddress,
-) -> Option<PhysicalAddress> {
-    let pt = get_current_page_table();
-    pt.translate(virt_addr)
+pub fn translate_using_current_page_table(virt_addr: VirtualAddress) -> Option<PhysicalAddress> {
+    let mut guard = ACTIVE_PAGETABLE.lock();
+    guard.translate(virt_addr)
 }

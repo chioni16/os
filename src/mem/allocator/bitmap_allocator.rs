@@ -220,9 +220,7 @@ impl BitMap {
             used_ram_frames: {:#x},
             ram_frames: {:#x},
         ",
-            bitmap.reserved_ram_frames,
-            bitmap.used_ram_frames,
-            bitmap.ram_frames,
+            bitmap.reserved_ram_frames, bitmap.used_ram_frames, bitmap.ram_frames,
         );
 
         bitmap

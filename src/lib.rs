@@ -17,8 +17,10 @@ use mem::allocator::bitmap_allocator::BitMapAllocator;
 #[global_allocator]
 static HEAP_ALLOCATOR: SpinLock<BitMapAllocator> = BitMapAllocator::locked();
 
-use log::LevelFilter;
+use log::{info, trace, LevelFilter};
 use logging::Logger;
+
+use crate::arch::ACTIVE_PAGETABLE;
 static LOGGER: Logger = Logger;
 
 // Weird behaviour:
@@ -39,7 +41,7 @@ extern "C" {
 #[no_mangle]
 pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
     log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(LevelFilter::Info))
+        .map(|()| log::set_max_level(LevelFilter::Trace))
         .unwrap();
 
     unsafe {
@@ -53,12 +55,13 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
     //     crate::println!("ptr: {:#x}", HIGHER_HALF_ADDRESS);
     // }
 
-    println!("Hello!: {:#x}", multiboot_addr);
+    ACTIVE_PAGETABLE.lock().init();
+    trace!("multiboot_addr: {:#x}", multiboot_addr);
     let multiboot_info = multiboot::MultibootInfo::new(multiboot_addr);
     // HEAP_ALLOCATOR2.lock().init(&multiboot_info);
     HEAP_ALLOCATOR.lock().init(&multiboot_info);
     arch::init();
-    crate::println!("init done");
+    info!("init done");
 
     // let a: u64 = 0;
     // unsafe {

@@ -1,4 +1,4 @@
-use crate::mem::{frame::Frame, PhysicalAddress, PAGE_SIZE};
+use crate::mem::{frame::Frame, PhysicalAddress};
 use bitflags::bitflags;
 
 use super::table::Table;
@@ -44,9 +44,8 @@ impl Entry {
 
     pub fn pointed_frame(&self) -> Option<Frame> {
         if self.flags().contains(EntryFlags::PRESENT) {
-            Some(Frame::containing_address(PhysicalAddress::new(
-                self.0 & PHYSADDR_MASK,
-            )))
+            let phys_addr = self.phys_addr();
+            Some(Frame::containing_address(phys_addr))
         } else {
             None
         }
@@ -67,14 +66,29 @@ impl Entry {
     }
 
     pub fn phys_addr(&self) -> PhysicalAddress {
-        PhysicalAddress::new(self.0 & (((1 << 40) - 1) * PAGE_SIZE))
+        // PhysicalAddress::new(self.0 & (((1 << 40) - 1) * PAGE_SIZE))
+        PhysicalAddress::new(self.0 & PHYSADDR_MASK)
     }
 
-    pub fn next_page_table(&self) -> &'static Table {
-        unsafe { self.phys_addr().to_virt().unwrap().as_ref_static() }
+    pub fn next_page_table(&self) -> Option<&Table> {
+        if self.flags().contains(EntryFlags::PRESENT) {
+            // SAFETY: `PRESENT` flag is set.
+            // the `map` method ensures that the entry points to a valid page table
+            let table = unsafe { &*self.phys_addr().to_virt().unwrap().as_const_ptr() };
+            Some(table)
+        } else {
+            None
+        }
     }
 
-    pub fn next_page_table_mut(&mut self) -> &'static mut Table {
-        unsafe { self.phys_addr().to_virt().unwrap().as_mut_static() }
+    pub fn next_page_table_mut(&mut self) -> Option<&mut Table> {
+        if self.flags().contains(EntryFlags::PRESENT) {
+            // SAFETY: `PRESENT` flag is set.
+            // the `map` method ensures that the entry points to a valid page table
+            let table = unsafe { &mut *self.phys_addr().to_virt().unwrap().as_mut_ptr() };
+            Some(table)
+        } else {
+            None
+        }
     }
 }
