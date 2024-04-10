@@ -6,6 +6,7 @@ mod pci;
 mod pic;
 mod port;
 mod smp;
+mod timers;
 mod vga_buffer;
 
 pub(crate) use interrupts::{disable_interrupts, enable_interrupts, is_int_enabled};
@@ -25,7 +26,7 @@ pub(crate) fn init() {
     let madt = rsdt.find_madt().unwrap();
     crate::println!("found madt: {:x?}", madt.fields);
 
-    apic::init_lapic();
+    apic::init(&madt);
     smp::init_ap(&madt);
 }
 
