@@ -44,6 +44,20 @@ SECTIONS {
         *(.rodata .rodata.*)
     } :rodata
 
+    .eh_frame_hdr ALIGN (4K) : AT (ADDR (.eh_frame_hdr) - HIGHER_HALF) 
+    {
+        PROVIDE(__eh_frame_hdr_start = .);
+        *(.eh_frame_hdr) 
+        PROVIDE(__eh_frame_hdr_end = .);
+    } :rodata
+
+    .eh_frame ALIGN (4K) : AT (ADDR (.eh_frame) - HIGHER_HALF) 
+    {
+        PROVIDE(__eh_frame_start = .);
+        KEEP (*(.eh_frame)) *(.eh_frame.*) 
+        PROVIDE(__eh_frame_end = .);
+    } :rodata
+
     .data.rel.ro ALIGN (4K) : AT (ADDR (.data.rel.ro) - HIGHER_HALF)
     {
         *(.data.rel.ro.local*) *(.data.rel.ro .data.rel.ro.*)
@@ -53,4 +67,8 @@ SECTIONS {
     {
         *(.bss .bss.*)
     } :data
+
+    /DISCARD/ : {
+        *(.note .note.*)
+    }
 }

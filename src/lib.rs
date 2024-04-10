@@ -9,6 +9,7 @@ mod locks;
 mod logging;
 mod mem;
 mod multiboot;
+mod stacktrace;
 
 use core::ptr::addr_of;
 use locks::SpinLock;
@@ -34,6 +35,10 @@ extern "C" {
     static stack_bottom: u8;
     static stack_top: u8;
     static HIGHER_HALF: u8;
+    static __eh_frame_start: u8;
+    static __eh_frame_end: u8;
+    static __eh_frame_hdr_start: u8;
+    static __eh_frame_hdr_end: u8;
 }
 
 // static mut HIGHER_HALF_ADDRESS: u64 = 0x0;
@@ -45,9 +50,16 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
         .unwrap();
 
     unsafe {
-        println!("top: {:#x?}", addr_of!(stack_top));
-        println!("bottom: {:#x?}", addr_of!(stack_bottom));
-        println!("higher half: {:#x?}", addr_of!(HIGHER_HALF));
+        info!("top: {:#x?}", addr_of!(stack_top));
+        info!("bottom: {:#x?}", addr_of!(stack_bottom));
+        info!("higher half: {:#x?}", addr_of!(HIGHER_HALF));
+        info!("__ehframe_start: {:#x?}", addr_of!(__eh_frame_start));
+        info!("__ehframe_end: {:#x?}", addr_of!(__eh_frame_end));
+        info!(
+            "__ehframe_hdr_start: {:#x?}",
+            addr_of!(__eh_frame_hdr_start)
+        );
+        info!("__ehframe_hdr_end: {:#x?}", addr_of!(__eh_frame_hdr_end));
     }
 
     // unsafe {
@@ -60,6 +72,7 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
     let multiboot_info = multiboot::MultibootInfo::new(multiboot_addr);
     // HEAP_ALLOCATOR2.lock().init(&multiboot_info);
     HEAP_ALLOCATOR.lock().init(&multiboot_info);
+    // panic!("hello");
     arch::init();
     info!("init done");
 
@@ -91,6 +104,38 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
+    use stacktrace::*;
+
+    let rip;
+    let rsp;
+    let rbp;
+    unsafe {
+        core::arch::asm!(
+            "lea {rip}, [rip]",
+            "mov {rsp}, rsp",
+            "mov {rbp}, rbp",
+            rip = out(reg) rip,
+            rsp = out(reg) rsp,
+            rbp = out(reg) rbp,
+        );
+    }
+    let register_set = RegisterSet {
+        rip: Some(rip),
+        rsp: Some(rsp),
+        rbp: Some(rbp),
+        ret: None,
+    };
+    let eh_info = unsafe { EhInfo::new() };
+    crate::println!("yolo");
+    let mut unwinder = Unwinder::new(eh_info, register_set);
+    crate::println!("yolo4");
+    while let Ok(Some(cf)) = unwinder.next() {
+        let pc = cf.pc.to_inner();
+        crate::println!("addr: {:#x}", pc);
+        if pc == 0 {
+            break;
+        }
+    }
     println!("{}", info);
     loop {}
 }
