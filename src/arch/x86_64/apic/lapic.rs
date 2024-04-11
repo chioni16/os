@@ -1,3 +1,5 @@
+use log::trace;
+
 use crate::{
     arch::x86_64::{rdmsr, wrmsr},
     mem::{PhysicalAddress, VirtualAddress},
@@ -51,8 +53,13 @@ impl Lapic {
                 base,
             };
 
+            // set Task Priority Register to 0 so that it allows all external interrupts
+            lapic.write_reg(0x80, 0);
+
             // set spurious vector and APIC software enable flag
             lapic.write_reg(0xf0, 0xff | 0x100);
+
+            lapic.init_timer();
 
             lapic
         }
@@ -78,4 +85,63 @@ impl Lapic {
     fn send_eoi(&self) {
         self.write_reg(0xb0, 0);
     }
+
+    unsafe fn init_timer(&self) {
+        const DIVIDER: u16 = 0x3e0;
+        const INIT_COUNT: u16 = 0x380;
+        const CUR_COUNT: u16 = 0x390;
+        const TIMER_LVT: u16 = 0x320;
+
+        // set divider to 16
+        // divider = 2 ** (i+1) for i = 0..6
+        // divider = 1 if i = 7
+        self.write_reg(DIVIDER, 0b11);
+
+        // TODO: start HPET for calibration
+
+        // initial count
+        self.write_reg(INIT_COUNT, u32::MAX);
+
+        // TODO: wait till you get the HPET interrupt
+
+        // mask interrupts
+        self.write_reg(TIMER_LVT, 1 << 16);
+
+
+        // calculate APIC timer ticks during this time
+        let cur_count = self.read_reg(CUR_COUNT);
+        let ticks_occurred = u32::MAX - cur_count;
+
+        // TODO calculate frequency and store it for further use
+        
+        // unset interrupt mask, set mode to periodic, set interrupt to 32 (IRQ0)
+        self.write_reg(TIMER_LVT, 1 << 17 | 32);
+        self.write_reg(DIVIDER, 0b11);
+        self.write_reg(INIT_COUNT, ticks_occurred);
+    }
 }
+
+// struct ApicTimer {
+
+// }
+
+// impl ApicTimer {
+//     fn new() -> Self {
+//         Self {}
+//     }
+
+//     unsafe fn init(&mut self) {
+//         // APIC timer always running (skips need for calibration)
+//         let CpuidResult { eax, .. } = core::arch::x86_64::__cpuid(0x6);
+//         trace!("NO NEED FOR CALIBRATION: {:#b}", eax);
+//         assert!(eax & 0b100 != 0);
+
+//         // TODO: initialise LAPIC timer
+//         // https://lore.kernel.org/all/20190417052810.3052-1-drake@endlessm.com/t/
+//         // let CpuidResult { eax, ebx, ecx, edx } = core::arch::x86_64::__cpuid(0x15);
+//         // trace!("0x15 leaf: eax: {}, ebx: {}, ecx: {}, edx: {}", eax, ebx, ecx, edx);
+
+//         self.reg
+//     }
+
+// }

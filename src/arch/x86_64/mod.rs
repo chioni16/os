@@ -10,6 +10,7 @@ mod timers;
 mod vga_buffer;
 
 pub(crate) use interrupts::{disable_interrupts, enable_interrupts, is_int_enabled};
+use log::info;
 pub(crate) use paging::{translate_using_current_page_table, ACTIVE_PAGETABLE};
 pub(crate) use vga_buffer::_print;
 
@@ -19,15 +20,14 @@ pub(crate) fn init() {
     pic::init();
     pci::init();
 
-    let rsdt = acpi::find_rsdt();
-    let acpi::AcpiSdtType::Rsdt(rsdt) = rsdt.unwrap().fields else {
-        unreachable!()
-    };
-    let madt = rsdt.find_madt().unwrap();
-    crate::println!("found madt: {:x?}", madt.fields);
+    let rsdt = acpi::find_rsdt().unwrap();
+    let madt_entries = rsdt.find_madt().unwrap();
+    info!("found madt: {:x?}", madt_entries);
 
-    apic::init(&madt);
-    smp::init_ap(&madt);
+    let hpet = timers::init(&rsdt);
+
+    apic::init(&madt_entries, &hpet);
+    smp::init_ap(&madt_entries);
 }
 
 unsafe fn rdmsr(msr: u32) -> u64 {

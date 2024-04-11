@@ -1,14 +1,18 @@
 mod ioapic;
 pub(super) mod lapic;
 
+extern crate alloc;
+use alloc::vec::Vec;
+
 use super::{
-    acpi::{self, AcpiSdt, AcpiSdtType, MadtEntry},
+    acpi,
     pic,
+    timers::hpet::Hpet,
 };
 use crate::arch::x86_64::smp::is_bsp;
 pub use lapic::send_eoi;
 
-pub(super) fn init(madt: &AcpiSdt) {
+pub(super) fn init(madt_entries: &Vec<acpi::MadtEntry>, hpet: &Hpet) {
     unsafe {
         pic::disable();
     }
@@ -21,16 +25,12 @@ pub(super) fn init(madt: &AcpiSdt) {
         return;
     }
 
-    let AcpiSdtType::Madt { entries, .. } = &madt.fields else {
-        unreachable!()
-    };
-
-    for entry in entries {
+    for entry in madt_entries {
         match entry {
             // MadtEntry::LocalApic(lapic) => init_lapic(lapic),
-            MadtEntry::IoApic(ioapic) => {
-                ioapic::IoApic::new(*ioapic).init(entries.iter().filter_map(|entry| {
-                    if let MadtEntry::IoApicIntSourceOverride(or) = entry {
+            acpi::MadtEntry::IoApic(ioapic) => {
+                ioapic::IoApic::new(*ioapic).init(madt_entries.iter().filter_map(|entry| {
+                    if let acpi::MadtEntry::IoApicIntSourceOverride(or) = entry {
                         Some(*or)
                     } else {
                         None

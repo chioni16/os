@@ -153,8 +153,14 @@ impl RsdtEntries {
             .and_then(AcpiSdt::new)
     }
 
-    pub(super) fn find_madt(&self) -> Option<AcpiSdt> {
+    pub(super) fn find_madt(&self) -> Option<Vec<MadtEntry>> {
         self.find(b"APIC")
+        .map(|a| {
+            let AcpiSdtType::Madt {entries, ..} = a.fields else {
+                unreachable!()
+            };
+            entries
+        })
     }
 
     pub(super) fn find_hpet(&self) -> Option<AcpiSdt> {
@@ -257,7 +263,7 @@ impl AcpiSdt {
     }
 }
 
-pub(super) fn find_rsdt() -> Option<AcpiSdt> {
+pub(super) fn find_rsdt() -> Option<RsdtEntries> {
     // version 2 is not supported as of yet
     find_rsdp()
         .and_then(|rsdp| {
@@ -269,7 +275,14 @@ pub(super) fn find_rsdt() -> Option<AcpiSdt> {
             };
             AcpiSdt::new(rsdt_addr)
         })
-        .filter(|a| matches!(a.fields, AcpiSdtType::Rsdt(_)))
+        // .filter(|a| matches!(a.fields, AcpiSdtType::Rsdt(_)));
+        .and_then(|a| {
+            if let AcpiSdtType::Rsdt(rsdt) = a.fields {
+                Some(rsdt)
+            } else {
+                None
+            }
+        })
 }
 
 fn find_rsdp() -> Option<&'static Rsdp> {

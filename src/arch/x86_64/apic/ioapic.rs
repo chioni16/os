@@ -32,7 +32,8 @@ impl IoApic {
             .for_each(|or| {
                 trace!("got override: {:#x?}", or);
                 let index = or.gsi - self.0.gsib;
-                let int_vec = or.irq_source + 0x20;
+                // TODO: hack for HPET interrupt routing, do it properly
+                let int_vec = or.irq_source + 0x20 + if index == 2 { 0xf } else { 0 };
                 let pin_polarity = or.flags & 0x2 != 0;
                 let trigger_mode = or.flags & 0x8 != 0;
                 // TODO: you may want to disable certain interrupts

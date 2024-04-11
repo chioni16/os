@@ -1,6 +1,9 @@
+extern crate alloc;
+use alloc::vec::Vec;
+
 use crate::{
     arch::x86_64::{
-        acpi::{AcpiSdt, AcpiSdtType, MadtEntry},
+        acpi::MadtEntry,
         apic::lapic::{APIC_ENABLE, LAPIC_BASE_ADDR_MASK, MSR_APIC_REG_BASE},
         rdmsr,
     },
@@ -25,7 +28,7 @@ pub(super) fn is_bsp() -> bool {
     (msr_apic_reg_base & IS_BSP) != 1
 }
 
-pub(super) fn init_ap(madt: &AcpiSdt) {
+pub(super) fn init_ap(madt_entries: &Vec<MadtEntry>) {
     unsafe {
         let msr_apic_reg_base = rdmsr(MSR_APIC_REG_BASE);
         crate::println!("APIC_BASE: {:#x}", msr_apic_reg_base);
@@ -64,10 +67,7 @@ pub(super) fn init_ap(madt: &AcpiSdt) {
         const SIPI_DATA1: u32 = 0b0000_0000_0000_0000_0100_0110_0000_0000;
         const SIPI_DATA2: u32 = 0b0000_0000_0000_0000_0000_0000_0000_0000;
 
-        let AcpiSdtType::Madt { entries, .. } = &madt.fields else {
-            unreachable!()
-        };
-        for entry in entries {
+        for entry in madt_entries {
             if let MadtEntry::LocalApic(lapic) = entry {
                 if lapic.aid == bspid {
                     continue;
