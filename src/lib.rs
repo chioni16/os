@@ -9,6 +9,7 @@ mod locks;
 mod logging;
 mod mem;
 mod multiboot;
+mod vfs;
 
 use core::ptr::addr_of;
 use locks::SpinLock;
