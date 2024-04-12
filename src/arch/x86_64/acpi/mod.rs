@@ -154,9 +154,8 @@ impl RsdtEntries {
     }
 
     pub(super) fn find_madt(&self) -> Option<Vec<MadtEntry>> {
-        self.find(b"APIC")
-        .map(|a| {
-            let AcpiSdtType::Madt {entries, ..} = a.fields else {
+        self.find(b"APIC").map(|a| {
+            let AcpiSdtType::Madt { entries, .. } = a.fields else {
                 unreachable!()
             };
             entries

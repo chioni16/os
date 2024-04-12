@@ -76,8 +76,6 @@ impl Hpet {
         // So, the legacy routing mode should work for our purposes
         let config = self.read_reg(0x10);
         self.write_reg(0x10, config | 0b11);
-
-        self.enable_timer_periodic(0, 5 * 10u64.pow(9), 2);
     }
 
     #[inline]
@@ -87,7 +85,7 @@ impl Hpet {
 
     // convert time in ns to the equivalent value in counter
     #[inline]
-    fn ns_to_counter(&self, ns: u64) -> u64 {
+    pub(in super::super) fn ns_to_counter(&self, ns: u64) -> u64 {
         (ns * self.frequency()) / 10u64.pow(9)
     }
 
@@ -108,12 +106,12 @@ impl Hpet {
     }
 
     #[inline]
-    fn read_main_counter(&self) -> u64 {
+    pub(in super::super) fn read_main_counter(&self) -> u64 {
         self.read_reg(0xf0)
     }
 
     #[inline]
-    fn write_main_counter(&self, val: u64) {
+    pub(in super::super) fn write_main_counter(&self, val: u64) {
         self.write_reg(0xf0, val);
     }
 
@@ -127,7 +125,7 @@ impl Hpet {
         0x108 + 0x20 * n as u64
     }
 
-    pub(super) fn enable_timer_oneshot(&self, n: usize, ns: u64, ioapic_interrupt: u8) {
+    pub(in super::super) fn enable_timer_oneshot(&self, n: usize, ns: u64, ioapic_interrupt: u8) {
         let counter = self.ns_to_counter(ns);
         assert!(counter > 0);
 
@@ -145,7 +143,7 @@ impl Hpet {
         self.write_reg(comp_offset, self.read_main_counter() + counter);
     }
 
-    pub(super) fn enable_timer_periodic(&self, n: usize, ns: u64, ioapic_interrupt: u8) {
+    pub(in super::super) fn enable_timer_periodic(&self, n: usize, ns: u64, ioapic_interrupt: u8) {
         let counter = self.ns_to_counter(ns);
         assert!(counter > 0);
 
@@ -153,7 +151,7 @@ impl Hpet {
         // set ioapic gsid to be used for interrupts and enable interrupts in periodic mode
         // setting 6th bit allows us to modify the inner counter directly
         // workaround to deal with the fact that the period is set to the last value written to the main counter
-        // bit 6 automatically clears after the first write? 
+        // bit 6 automatically clears after the first write?
         // PS: I don't fully understand it yet
         let val = (ioapic_interrupt as u64) << 9 | 1 << 6 | 1 << 3 | 1 << 0x2;
         self.write_reg(conf_offset, val);

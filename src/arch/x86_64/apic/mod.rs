@@ -4,11 +4,7 @@ pub(super) mod lapic;
 extern crate alloc;
 use alloc::vec::Vec;
 
-use super::{
-    acpi,
-    pic,
-    timers::hpet::Hpet,
-};
+use super::{acpi, pic, timers::hpet::Hpet};
 use crate::arch::x86_64::smp::is_bsp;
 pub use lapic::send_eoi;
 
@@ -17,7 +13,7 @@ pub(super) fn init(madt_entries: &Vec<acpi::MadtEntry>, hpet: &Hpet) {
         pic::disable();
     }
 
-    lapic::Lapic::init();
+    lapic::Lapic::init(hpet);
 
     // IoApic is common to all the cores
     // So no need to do the same work multiple times in case of SMP

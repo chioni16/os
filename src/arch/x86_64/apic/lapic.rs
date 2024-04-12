@@ -1,7 +1,7 @@
 use log::trace;
 
 use crate::{
-    arch::x86_64::{rdmsr, wrmsr},
+    arch::x86_64::{rdmsr, timers::hpet::Hpet, wrmsr},
     mem::{PhysicalAddress, VirtualAddress},
 };
 use core::arch::x86_64::CpuidResult;
@@ -34,7 +34,7 @@ pub unsafe fn send_eoi() {
 
 impl Lapic {
     // pub(super) fn new(table: acpi::LocalApic) -> Self {
-    pub(super) fn init() -> Self {
+    pub(super) fn init(hpet: &Hpet) -> Self {
         unsafe {
             // ensure presence of LAPIC on this core
             let CpuidResult { edx, .. } = core::arch::x86_64::__cpuid(1);
@@ -48,7 +48,7 @@ impl Lapic {
             let base_phys = PhysicalAddress::new(msr_apic_reg_base & LAPIC_BASE_ADDR_MASK);
             let base = base_phys.to_virt().unwrap();
 
-            let lapic = Self {
+            let mut lapic = Self {
                 // table,
                 base,
             };
@@ -59,7 +59,7 @@ impl Lapic {
             // set spurious vector and APIC software enable flag
             lapic.write_reg(0xf0, 0xff | 0x100);
 
-            lapic.init_timer();
+            lapic.init_timer(hpet);
 
             lapic
         }
@@ -86,38 +86,111 @@ impl Lapic {
         self.write_reg(0xb0, 0);
     }
 
-    unsafe fn init_timer(&self) {
-        const DIVIDER: u16 = 0x3e0;
-        const INIT_COUNT: u16 = 0x380;
-        const CUR_COUNT: u16 = 0x390;
-        const TIMER_LVT: u16 = 0x320;
+    // APIC TIMER
 
-        // set divider to 16
-        // divider = 2 ** (i+1) for i = 0..6
-        // divider = 1 if i = 7
-        self.write_reg(DIVIDER, 0b11);
+    const DIVIDER: u16 = 0x3e0;
+    const INIT_COUNT: u16 = 0x380;
+    const CURRENT_COUNT: u16 = 0x390;
+    const TIMER_LVT: u16 = 0x320;
+    const TIMER_INTERRUPT: u16 = 16;
 
-        // TODO: start HPET for calibration
+    unsafe fn init_timer(&mut self, hpet: &Hpet) {
+        let divider = 128;
+        self.set_timer_divider(divider);
+        // mask interrupts
+        self.mask_timer_interrupts(true);
+
+        // start HPET for calibration
+        let counter = hpet.ns_to_counter(10u64.pow(9));
+        hpet.write_main_counter(0);
 
         // initial count
-        self.write_reg(INIT_COUNT, u32::MAX);
+        self.set_timer_initial_count(u32::MAX);
 
-        // TODO: wait till you get the HPET interrupt
+        // wait till you get the HPET interrupt
+        while hpet.read_main_counter() < counter {
+            core::hint::spin_loop();
+        }
 
-        // mask interrupts
-        self.write_reg(TIMER_LVT, 1 << 16);
-
+        // TODO: The method assumes that there were no wrap arounds in the Apic timer
+        // during this time.
+        // For this to be true, try to keep the divisor value hight (64 / 128) for calibration
 
         // calculate APIC timer ticks during this time
-        let cur_count = self.read_reg(CUR_COUNT);
-        let ticks_occurred = u32::MAX - cur_count;
+        let ticks_occurred = u32::MAX - self.get_timer_current_count();
+        trace!(
+            "APIC timer frequency {} for divider {}",
+            ticks_occurred,
+            divider
+        );
 
-        // TODO calculate frequency and store it for further use
-        
+        // TODO: calculate frequency and store it for further use
+
         // unset interrupt mask, set mode to periodic, set interrupt to 32 (IRQ0)
-        self.write_reg(TIMER_LVT, 1 << 17 | 32);
-        self.write_reg(DIVIDER, 0b11);
-        self.write_reg(INIT_COUNT, ticks_occurred);
+        self.set_timer_divider(divider);
+        self.set_timer_interrupt_vector(32); // IRQ0
+        self.set_timer_mode(ApicTimerMode::Periodic);
+        self.mask_timer_interrupts(false);
+        self.set_timer_initial_count(2 * ticks_occurred);
+    }
+
+    #[inline]
+    fn mask_timer_interrupts(&self, mask: bool) {
+        let val = self.read_reg(Self::TIMER_LVT);
+        if mask {
+            self.write_reg(Self::TIMER_LVT, val | (1 << Self::TIMER_INTERRUPT));
+        } else {
+            self.write_reg(Self::TIMER_LVT, val & !(1 << Self::TIMER_INTERRUPT));
+        }
+    }
+
+    #[inline]
+    fn set_timer_mode(&self, mode: ApicTimerMode) {
+        let mode = mode as u32;
+        let old_val = self.read_reg(Self::TIMER_LVT);
+        let new_val = (old_val & !(0b11 << 17)) | mode << 17;
+        self.write_reg(Self::TIMER_LVT, new_val);
+    }
+
+    #[inline]
+    fn set_timer_interrupt_vector(&self, vector: u8) {
+        let old_val = self.read_reg(Self::TIMER_LVT);
+        let new_val = (old_val & !0xff) | vector as u32;
+        self.write_reg(Self::TIMER_LVT, new_val);
+    }
+    // #[inline]
+    // fn unmask_timer_interrupts(&self) {
+    //     let val = self.read_reg(Self::TIMER_LVT);
+    //     self.write_reg(Self::TIMER_LVT, val & !(1 << Self::TIMER_INTERRUPT));
+    // }
+
+    #[inline]
+    fn set_timer_divider(&self, divider: u8) {
+        // divider = 2 ** (i+1) for i = 0..6
+        // divider = 1 if i = 7
+        let divider = match divider {
+            1 => 0b111,
+            2 => 0b000,
+            4 => 0b001,
+            8 => 0b010,
+            16 => 0b011,
+            32 => 0b100,
+            64 => 0b101,
+            128 => 0b110,
+            _ => panic!("unsupported APIC Timer divider: {divider}"),
+        };
+
+        self.write_reg(Self::DIVIDER, divider);
+    }
+
+    #[inline]
+    fn set_timer_initial_count(&self, init_count: u32) {
+        self.write_reg(Self::INIT_COUNT, init_count);
+    }
+
+    #[inline]
+    fn get_timer_current_count(&self) -> u32 {
+        self.read_reg(Self::CURRENT_COUNT)
     }
 }
 
@@ -145,3 +218,10 @@ impl Lapic {
 //     }
 
 // }
+
+#[repr(u32)]
+enum ApicTimerMode {
+    Oneshot = 0,
+    Periodic = 1,
+    // TscDeadline = 2, // not supported
+}
