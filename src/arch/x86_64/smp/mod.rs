@@ -2,6 +2,7 @@ use crate::{
     arch::x86_64::{
         acpi::{AcpiSdt, AcpiSdtType, MadtEntry},
         apic::{APIC_ENABLE, MSR_APIC_REG_BASE},
+        paging::Mmio,
         rdmsr,
     },
     mem::PhysicalAddress,
@@ -45,14 +46,10 @@ pub(super) fn init_ap(madt: &AcpiSdt) {
         crate::println!("base: {:#x?}", base);
 
         // TODO: MMIO module and mapping the physical addresses properly with strongly uncacheable properties
-        let part1: *mut u32 = PhysicalAddress::new(base + OFFSET1)
-            .to_virt()
-            .unwrap()
-            .as_mut_ptr();
-        let part2: *mut u32 = PhysicalAddress::new(base + OFFSET2)
-            .to_virt()
-            .unwrap()
-            .as_mut_ptr();
+        let base = PhysicalAddress::new(base);
+        let mmio = Mmio::new(base, base.offset(0x400));
+        let part1: *mut u32 = base.offset(OFFSET1).to_virt().unwrap().as_mut_ptr();
+        let part2: *mut u32 = base.offset(OFFSET2).to_virt().unwrap().as_mut_ptr();
 
         const INIT_DATA1: u32 = 0b0000_0000_0000_0000_0100_0101_0000_0000;
         const INIT_DATA2: u32 = 0b0000_0000_0000_0000_0000_0000_0000_0000;
@@ -113,5 +110,6 @@ pub(super) fn init_ap(madt: &AcpiSdt) {
                 // TODO: SIPI2?
             }
         }
+        drop(mmio);
     }
 }

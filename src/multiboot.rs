@@ -12,7 +12,8 @@ pub struct Elf64SectionHeader {
     sh_flags: u64,
     sh_addr: u64,
     sh_offset: u64,
-    sh_size: u64,
+    // pub for the unsafe shenanigans in crate::mem::allocator
+    pub(crate) sh_size: u64,
     sh_link: u32,
     sh_info: u32,
     sh_addralign: u64,
@@ -51,7 +52,13 @@ impl Elf64SectionHeader {
 
     // last address that belongs to the entry
     pub fn end(&self) -> VirtualAddress {
-        self.start().offset(self.size() - 1)
+        let start = self.start();
+        let size = self.size();
+        if size > 0 {
+            start.offset(self.size() - 1)
+        } else {
+            start
+        }
     }
 
     pub fn flags(&self) -> Elf64SectionFlags {
@@ -142,6 +149,30 @@ impl<T> Iterator for MultibootIter<T> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct MultibootAddrIter<T> {
+    start: VirtualAddress,
+    cur: u32,
+    total_size: u32,
+    _marker: PhantomData<T>,
+}
+
+impl<T> Iterator for MultibootAddrIter<T> {
+    type Item = *mut T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur >= self.total_size {
+            return None;
+        }
+
+        let addr = self.start.offset(self.cur as u64).as_mut_ptr();
+
+        self.cur += core::mem::size_of::<T>() as u32;
+
+        Some(addr)
+    }
+}
+
 pub struct MultibootInfo {
     base: PhysicalAddress,
     size: u32,
@@ -226,6 +257,30 @@ impl MultibootInfo {
             }
 
             MultibootIter {
+                start: start_addr,
+                cur: 20,
+                total_size,
+                _marker: PhantomData,
+            }
+        })
+    }
+
+    // TODO: use macros to avoid repetition
+    pub fn multiboot_elf_tag_addrs(&self) -> Option<MultibootAddrIter<Elf64SectionHeader>> {
+        self.find_tags_of_type(9).map(|(start_addr, total_size)| {
+            // SAFETY:
+            // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
+            // start to start + size
+            unsafe {
+                // consider padding
+                let entry_size = ptr::read_unaligned(start_addr.offset(12).as_const_ptr::<u16>());
+                assert_eq!(
+                    entry_size as usize,
+                    core::mem::size_of::<Elf64SectionHeader>()
+                );
+            }
+
+            MultibootAddrIter {
                 start: start_addr,
                 cur: 20,
                 total_size,

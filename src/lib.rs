@@ -60,7 +60,7 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
     let multiboot_info = multiboot::MultibootInfo::new(multiboot_addr);
     // HEAP_ALLOCATOR2.lock().init(&multiboot_info);
     HEAP_ALLOCATOR.lock().init(&multiboot_info);
-    arch::init();
+    arch::init(&multiboot_info);
     info!("init done");
 
     // let a: u64 = 0;

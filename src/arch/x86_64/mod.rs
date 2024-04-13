@@ -9,11 +9,16 @@ mod smp;
 mod vga_buffer;
 
 pub(crate) use interrupts::{disable_interrupts, enable_interrupts, is_int_enabled};
-pub(crate) use paging::{translate_using_current_page_table, ACTIVE_PAGETABLE};
+pub(crate) use paging::{
+    map_rw_using_current_page_table, translate_using_current_page_table,
+    unmap_rw_using_current_page_table, ACTIVE_PAGETABLE,
+};
 pub(crate) use vga_buffer::_print;
 
-pub(crate) fn init() {
-    paging::init();
+use crate::multiboot::MultibootInfo;
+
+pub(crate) fn init(multiboot_info: &MultibootInfo) {
+    paging::init(multiboot_info);
     interrupts::init();
     pic::init();
     pci::init();
@@ -22,6 +27,7 @@ pub(crate) fn init() {
     let acpi::AcpiSdtType::Rsdt(rsdt) = rsdt.unwrap().fields else {
         unreachable!()
     };
+    crate::println!("found rsdt: {:x?}", rsdt);
     let madt = rsdt.find_madt().unwrap();
     crate::println!("found madt: {:x?}", madt.fields);
 

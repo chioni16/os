@@ -1,12 +1,15 @@
-extern crate alloc;
-use alloc::boxed::Box;
+use log::trace;
 
 use super::entry::{Entry, EntryFlags, PAGE_ENTRY_SIZE};
 use super::ACTIVE_PAGETABLE;
 use crate::locks::SpinLock;
 use crate::mem::frame::Frame;
 use crate::mem::{PhysicalAddress, VirtualAddress, PAGE_SIZE};
+use crate::{HEAP_ALLOCATOR, HIGHER_HALF};
 use core::ops::{Index, IndexMut};
+use core::ptr::addr_of;
+
+use crate::mem::allocator::FrameAllocator;
 
 const PAGE_ENTRY_COUNT: u64 = PAGE_SIZE / PAGE_ENTRY_SIZE;
 
@@ -64,36 +67,104 @@ impl P4Table {
     }
 
     fn alloc_page_table() -> Frame {
-        let frame = Box::new(Table::zero());
-
-        // release memory which is recovered when `P4Table` is dropped
-        let virt_addr = Box::into_raw(frame);
-
-        let virt_addr = VirtualAddress::new(virt_addr as u64);
-        let phys_addr = {
-            let mut guard = ACTIVE_PAGETABLE.lock();
-            guard.translate(virt_addr).unwrap()
-        };
-
-        Frame::containing_address(phys_addr)
+        // use the heap allocator allocate frame method
+        HEAP_ALLOCATOR.lock().allocate_frame().unwrap()
     }
 
     // SAFETY: ensure that the frame is a valid allocated frame from the allocator
     unsafe fn dealloc_page_table(table: &mut Table) {
-        // let phys_addr = frame.start_address();
-        // let virt_addr = phys_addr.to_virt().unwrap();
-        // Box::from_raw(virt_addr.to_inner() as *mut Table);
-        let table = Box::from_raw(table as *mut Table);
-        drop(table);
+        // use the heap allocator free frame method
+        let virt_addr = table as *const Table as u64;
+        let phys_addr = PhysicalAddress::new(virt_addr - addr_of!(HIGHER_HALF) as u64);
+        HEAP_ALLOCATOR.lock().deallocate_frame(Frame::containing_address(phys_addr));
     }
 
-    pub fn map(
+    pub fn map_huge_1GiB(
         &mut self,
         virt_addr: VirtualAddress,
         phys_addr: PhysicalAddress,
         flags_to_set: EntryFlags,
     ) {
-        // TODO: support mapping huge pages
+        assert!(flags_to_set.contains(EntryFlags::HUGE_PAGE));
+
+        // SAFETY: all of this code should run from the kernel space
+        // So, even though the page tables are changed to kernel's page table on entering kernel space from userspace,
+        // as the kernel memory is mapped to the higher half of every userspace program, the translation by adding a fixed offset should yield valid addresses
+        // these upper half addresses are only accessible by kernel. ignoring meltdown/spectre ;)
+        let p4 = unsafe { &mut *self.addr.to_virt().unwrap().as_mut_ptr::<Table>() };
+
+        // entry in p4 table corresponding to the p3 table
+        let p4_entry = &mut p4[virt_addr.p4_index()];
+        if !p4_entry.flags().contains(EntryFlags::PRESENT) {
+            let new_frame = Self::alloc_page_table();
+            p4_entry.set(new_frame, EntryFlags::PRESENT);
+        }
+        if flags_to_set.contains(EntryFlags::WRITABLE) {
+            p4_entry.set_flags(EntryFlags::WRITABLE);
+        }
+        if flags_to_set.contains(EntryFlags::USER_ACCESSIBLE) {
+            p4_entry.set_flags(EntryFlags::USER_ACCESSIBLE);
+        }
+
+        let p3 = p4_entry.next_page_table_mut().unwrap();
+        // entry in p3 table corresponding to the corresponding leaf frame
+        let p3_entry = &mut p3[virt_addr.p3_index()];
+        p3_entry.set(Frame::containing_address(phys_addr), flags_to_set);
+    }
+
+    pub fn map_huge_2MiB(
+        &mut self,
+        virt_addr: VirtualAddress,
+        phys_addr: PhysicalAddress,
+        flags_to_set: EntryFlags,
+    ) {
+        assert!(flags_to_set.contains(EntryFlags::HUGE_PAGE));
+
+        // SAFETY: all of this code should run from the kernel space
+        // So, even though the page tables are changed to kernel's page table on entering kernel space from userspace,
+        // as the kernel memory is mapped to the higher half of every userspace program, the translation by adding a fixed offset should yield valid addresses
+        // these upper half addresses are only accessible by kernel. ignoring meltdown/spectre ;)
+        let p4 = unsafe { &mut *self.addr.to_virt().unwrap().as_mut_ptr::<Table>() };
+
+        // entry in p4 table corresponding to the p3 table
+        let p4_entry = &mut p4[virt_addr.p4_index()];
+        if !p4_entry.flags().contains(EntryFlags::PRESENT) {
+            let new_frame = Self::alloc_page_table();
+            p4_entry.set(new_frame, EntryFlags::PRESENT);
+        }
+        if flags_to_set.contains(EntryFlags::WRITABLE) {
+            p4_entry.set_flags(EntryFlags::WRITABLE);
+        }
+        if flags_to_set.contains(EntryFlags::USER_ACCESSIBLE) {
+            p4_entry.set_flags(EntryFlags::USER_ACCESSIBLE);
+        }
+
+        let p3 = p4_entry.next_page_table_mut().unwrap();
+        // entry in p3 table corresponding to the p2 table
+        let p3_entry = &mut p3[virt_addr.p3_index()];
+        if !p3_entry.flags().contains(EntryFlags::PRESENT) {
+            let new_frame = Self::alloc_page_table();
+            p3_entry.set(new_frame, EntryFlags::PRESENT);
+        }
+        if flags_to_set.contains(EntryFlags::WRITABLE) {
+            p3_entry.set_flags(EntryFlags::WRITABLE);
+        }
+        if flags_to_set.contains(EntryFlags::USER_ACCESSIBLE) {
+            p3_entry.set_flags(EntryFlags::USER_ACCESSIBLE);
+        }
+
+        let p2 = p3_entry.next_page_table_mut().unwrap();
+        // entry in p2 table corresponding to the leaf frame
+        let p2_entry = &mut p2[virt_addr.p2_index()];
+        p2_entry.set(Frame::containing_address(phys_addr), flags_to_set);
+    }
+
+    pub fn map_4KiB(
+        &mut self,
+        virt_addr: VirtualAddress,
+        phys_addr: PhysicalAddress,
+        flags_to_set: EntryFlags,
+    ) {
         assert!(!flags_to_set.contains(EntryFlags::HUGE_PAGE));
 
         // SAFETY: all of this code should run from the kernel space
@@ -160,7 +231,7 @@ impl P4Table {
             // TODO: deallocating page table frames necessary here?
             // If you change this remember to modify the drop implementation to avoid double free
             // IMPORTANT: Better, just set the physical address to 0 when you free a page table
-            // but will this cause an issue in the future, when you handle demand paging? 
+            // but will this cause an issue in the future, when you handle demand paging?
             // At the moment, `traverse` method only returns leaf table entries
             // i.e, P1 / Huge table entries
 
@@ -224,6 +295,7 @@ impl P4Table {
 
 impl Drop for P4Table {
     fn drop(&mut self) {
+        trace!("drop started");
         // SAFETY: all of this code should run from the kernel space
         // So, even though the page tables are changed to kernel's page table on entering kernel space from userspace,
         // as the kernel memory is mapped to the higher half of every userspace program, the translation by adding a fixed offset should yield valid addresses
@@ -239,19 +311,29 @@ impl Drop for P4Table {
             // TODO: what should I look for to skip the entry?
             // depends on the `unmap` implementation
             // but for now this should suffice
-            if p4_entry.phys_addr().to_inner() == 0 {
+
+            // If the entry has the huge page flag set, it means that it points to "actual" frames and not to another page table frame
+            // In this case, don't free the actual frame
+
+            if p4_entry.phys_addr().to_inner() == 0
+                || p4_entry.flags().contains(EntryFlags::HUGE_PAGE)
+            {
                 continue;
             }
 
             let p3 = p4_entry.next_page_table_mut().unwrap();
             for p3_entry in &mut p3.entries {
-                if p3_entry.phys_addr().to_inner() == 0{
+                if p3_entry.phys_addr().to_inner() == 0
+                    || p3_entry.flags().contains(EntryFlags::HUGE_PAGE)
+                {
                     continue;
                 }
 
                 let p2 = p3_entry.next_page_table_mut().unwrap();
                 for p2_entry in &mut p2.entries {
-                    if p2_entry.phys_addr().to_inner() == 0 {
+                    if p2_entry.phys_addr().to_inner() == 0
+                        || p2_entry.flags().contains(EntryFlags::HUGE_PAGE)
+                    {
                         continue;
                     }
 
@@ -296,6 +378,9 @@ impl ActiveP4Table {
     }
 
     pub fn switch(&mut self, new_p4: P4Table) -> P4Table {
+        trace!("old page table: {:#x?}", self);
+        trace!("new page table: {:#x?}", new_p4);
+
         // SAFETY: paging is enabled by the time we get here
         // and the `ActiveP4Table` always holds the same value as the CR3 register
         // This is guaranteed partly because any changes to `ActiveP4Table` occurs through a lock
@@ -315,13 +400,33 @@ impl ActiveP4Table {
         self.as_mut().translate(virt_addr)
     }
 
-    pub fn map(
+    pub fn map_huge_1GiB(
         &mut self,
         virt_addr: VirtualAddress,
         phys_addr: PhysicalAddress,
         flags_to_set: EntryFlags,
     ) {
-        self.as_mut().map(virt_addr, phys_addr, flags_to_set);
+        self.as_mut()
+            .map_huge_1GiB(virt_addr, phys_addr, flags_to_set);
+    }
+
+    pub fn map_huge_2MiB(
+        &mut self,
+        virt_addr: VirtualAddress,
+        phys_addr: PhysicalAddress,
+        flags_to_set: EntryFlags,
+    ) {
+        self.as_mut()
+            .map_huge_2MiB(virt_addr, phys_addr, flags_to_set);
+    }
+
+    pub fn map_4KiB(
+        &mut self,
+        virt_addr: VirtualAddress,
+        phys_addr: PhysicalAddress,
+        flags_to_set: EntryFlags,
+    ) {
+        self.as_mut().map_4KiB(virt_addr, phys_addr, flags_to_set);
     }
 
     pub fn unmap(&mut self, virt_addr: VirtualAddress) -> bool {

@@ -1,4 +1,5 @@
 use crate::mem::{frame::Frame, PhysicalAddress};
+use crate::multiboot::{Elf64SectionFlags, Elf64SectionHeader};
 use bitflags::bitflags;
 
 use super::table::Table;
@@ -18,6 +19,25 @@ bitflags! {
         const HUGE_PAGE =       1 << 7;
         const GLOBAL =          1 << 8;
         const NO_EXECUTE =      1 << 63;
+    }
+}
+
+impl EntryFlags {
+    pub fn from_elf_section_flags(section: &Elf64SectionHeader) -> Self {
+        let mut flags = Self::empty();
+
+        if section.flags().contains(Elf64SectionFlags::SHF_ALLOC) {
+            // section is loaded to memory
+            flags = flags | Self::PRESENT;
+        }
+        if section.flags().contains(Elf64SectionFlags::SHF_WRITE) {
+            flags = flags | Self::WRITABLE;
+        }
+        if !section.flags().contains(Elf64SectionFlags::SHF_EXECINSTR) {
+            flags = flags | Self::NO_EXECUTE;
+        }
+
+        flags
     }
 }
 
@@ -67,6 +87,7 @@ impl Entry {
 
     pub fn phys_addr(&self) -> PhysicalAddress {
         // PhysicalAddress::new(self.0 & (((1 << 40) - 1) * PAGE_SIZE))
+        // crate::println!("phys_addr: {:#x?}", self.0);
         PhysicalAddress::new(self.0 & PHYSADDR_MASK)
     }
 

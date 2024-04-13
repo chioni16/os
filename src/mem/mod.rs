@@ -23,11 +23,11 @@ impl PhysicalAddress {
     pub const unsafe fn to_virt(&self) -> Option<VirtualAddress> {
         // 4 GiB
         // size of available ram
-        if self.0 < 0x100000000 {
-            Some(VirtualAddress::new(self.0 + HIGHER_HALF))
-        } else {
-            None
-        }
+        // if self.0 < 0x100000000 {
+        Some(VirtualAddress::new(self.0 + HIGHER_HALF))
+        // } else {
+        //     None
+        // }
     }
 }
 
@@ -49,13 +49,13 @@ impl VirtualAddress {
 
     // used when you suspect the data may not be aligned properly. example: multiboot structs
     // also used when we need a reference tied to a non-static lifetime. eg: page table
-    pub const unsafe fn as_const_ptr<T>(&self) -> *const T {
+    pub const fn as_const_ptr<T>(&self) -> *const T {
         self.0 as *const T
     }
 
     // used when you suspect the data may not be aligned properly. example: multiboot structs
     // also used when we need a reference tied to a non-static lifetime. eg: page table
-    pub const unsafe fn as_mut_ptr<T>(&self) -> *mut T {
+    pub const fn as_mut_ptr<T>(&self) -> *mut T {
         self.0 as *mut T
     }
 
@@ -66,4 +66,14 @@ impl VirtualAddress {
     pub unsafe fn as_mut_static<T>(&self) -> &'static mut T {
         &mut *(self.0 as *mut T)
     }
+}
+
+#[inline]
+pub(crate) fn align_up(num: u64, align: u64) -> u64 {
+    num.div_ceil(align) * align
+}
+
+#[inline]
+pub(crate) fn align_down(num: u64, align: u64) -> u64 {
+    (num / align) * align
 }
