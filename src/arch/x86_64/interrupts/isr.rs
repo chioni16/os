@@ -1,4 +1,4 @@
-use super::super::{pic, port::Port};
+use crate::arch::x86_64::{apic, port::Port};
 
 pub(super) type HandlerFn = extern "C" fn() -> !;
 
@@ -125,13 +125,21 @@ pub(super) extern "C" fn page_fault(isf: &InterruptStackFrame, error_code: u64) 
 pub(super) extern "C" fn timer(_isf: &InterruptStackFrame) {
     without_interrupts(|| unsafe {
         crate::print!(".");
-        pic::send_eoi(0);
+        // pic::send_eoi(0);
+        apic::send_eoi();
+    });
+}
+pub(super) extern "C" fn hpet(_isf: &InterruptStackFrame) {
+    without_interrupts(|| unsafe {
+        crate::println!("!");
+        apic::send_eoi();
     });
 }
 pub(super) extern "C" fn keyboard(_isf: &InterruptStackFrame) {
     without_interrupts(|| unsafe {
         crate::print!("{:x}", Port::new(0x60).read::<u8>());
-        pic::send_eoi(1);
+        // pic::send_eoi(1);
+        apic::send_eoi();
     });
 }
 

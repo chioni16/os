@@ -1,20 +1,39 @@
-use super::pic;
-use crate::arch::x86_64::{rdmsr, wrmsr};
-use core::arch::x86_64::CpuidResult;
+mod ioapic;
+pub(super) mod lapic;
 
-pub(super) const MSR_APIC_REG_BASE: u32 = 0x1b;
-pub(super) const APIC_ENABLE: u64 = 1 << 11;
-pub(super) const LAPIC_PRESENT: u32 = 1 << 9;
+extern crate alloc;
+use alloc::vec::Vec;
 
-pub(super) fn init_lapic() {
+use super::{acpi, pic, timers::hpet::Hpet};
+use crate::arch::x86_64::smp::is_bsp;
+pub use lapic::send_eoi;
+
+pub(super) fn init(madt_entries: &Vec<acpi::MadtEntry>, hpet: &Hpet) {
     unsafe {
-        let CpuidResult { edx, .. } = core::arch::x86_64::__cpuid(1);
-        assert!(edx & LAPIC_PRESENT != 0);
-
         pic::disable();
+    }
 
-        let msr_apic_reg_base = rdmsr(MSR_APIC_REG_BASE);
-        crate::println!("APIC_BASE: {:#x}", msr_apic_reg_base);
-        wrmsr(MSR_APIC_REG_BASE, msr_apic_reg_base | APIC_ENABLE);
+    lapic::Lapic::init(hpet);
+
+    // IoApic is common to all the cores
+    // So no need to do the same work multiple times in case of SMP
+    if !is_bsp() {
+        return;
+    }
+
+    for entry in madt_entries {
+        match entry {
+            // MadtEntry::LocalApic(lapic) => init_lapic(lapic),
+            acpi::MadtEntry::IoApic(ioapic) => {
+                ioapic::IoApic::new(*ioapic).init(madt_entries.iter().filter_map(|entry| {
+                    if let acpi::MadtEntry::IoApicIntSourceOverride(or) = entry {
+                        Some(*or)
+                    } else {
+                        None
+                    }
+                }))
+            }
+            _ => {}
+        }
     }
 }
