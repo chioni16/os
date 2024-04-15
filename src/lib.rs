@@ -104,6 +104,8 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
+    println!("{}", info);
+
     use stacktrace::*;
 
     let rip;
@@ -125,17 +127,8 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         rbp: Some(rbp),
         ret: None,
     };
-    let eh_info = unsafe { EhInfo::new() };
-    crate::println!("yolo");
-    let mut unwinder = Unwinder::new(eh_info, register_set);
-    crate::println!("yolo4");
-    while let Ok(Some(cf)) = unwinder.next() {
-        let pc = cf.pc.to_inner();
-        crate::println!("addr: {:#x}", pc);
-        if pc == 0 {
-            break;
-        }
-    }
-    println!("{}", info);
+
+    unwind(register_set);
+
     loop {}
 }

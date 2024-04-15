@@ -7,16 +7,11 @@ use crate::{
 use core::{ptr::addr_of, slice};
 use gimli::{
     BaseAddresses, CfaRule, EhFrame, EhFrameHdr, EhHdrTable, EndianSlice, LittleEndian,
-    ParsedEhFrameHdr, Pointer, Register, RegisterRule, UnwindContext, UnwindSection, X86_64,
+    ParsedEhFrameHdr, Pointer, RegisterRule, UnwindContext, UnwindSection,
 };
 
-#[derive(Debug)]
-pub struct CallFrame {
-    pub pc: VirtualAddress,
-    // pub symbol: Option<&'static str>,
-    // pub sym_off: Option<usize>,
-    // pub file_line: Option<(&'static str, u32)>,
-}
+use super::{CallFrame, RegisterSet, UnwinderError};
+
 
 pub struct EhInfo {
     /// A set of base addresses used for relative addressing.
@@ -173,72 +168,18 @@ impl Unwinder {
     }
 }
 
-#[derive(Debug)]
-pub enum UnwinderError {
-    UnexpectedRegister(Register),
-    UnsupportedCfaRule,
-    UnimplementedRegisterRule,
-    CfaRuleUnknownRegister(Register),
-    NoUnwindInfo,
-    NoPcRegister,
-    NoReturnAddr,
-}
 
-#[derive(Debug, Default)]
-pub struct RegisterSet {
-    pub rip: Option<u64>,
-    pub rsp: Option<u64>,
-    pub rbp: Option<u64>,
-    pub ret: Option<u64>,
-}
 
-impl RegisterSet {
-    fn get(&self, reg: Register) -> Option<u64> {
-        match reg {
-            X86_64::RSP => self.rsp,
-            X86_64::RBP => self.rbp,
-            X86_64::RA => self.ret,
-            _ => None,
+pub fn unwind(register_set: RegisterSet) {
+    let eh_info = unsafe { EhInfo::new() };
+    crate::println!("yolo");
+    let mut unwinder = Unwinder::new(eh_info, register_set);
+    crate::println!("yolo4");
+    while let Ok(Some(cf)) = unwinder.next() {
+        let pc = cf.pc.to_inner();
+        crate::println!("addr: {:#x}", pc);
+        if pc == 0 {
+            break;
         }
-    }
-
-    fn set(&mut self, reg: Register, val: u64) -> Result<(), UnwinderError> {
-        *match reg {
-            X86_64::RSP => &mut self.rsp,
-            X86_64::RBP => &mut self.rbp,
-            X86_64::RA => &mut self.ret,
-            _ => return Err(UnwinderError::UnexpectedRegister(reg)),
-        } = Some(val);
-
-        Ok(())
-    }
-
-    fn undef(&mut self, reg: Register) {
-        *match reg {
-            X86_64::RSP => &mut self.rsp,
-            X86_64::RBP => &mut self.rbp,
-            X86_64::RA => &mut self.ret,
-            _ => return,
-        } = None;
-    }
-
-    fn get_pc(&self) -> Option<u64> {
-        self.rip
-    }
-
-    fn set_pc(&mut self, val: u64) {
-        self.rip = Some(val);
-    }
-
-    fn get_ret(&self) -> Option<u64> {
-        self.ret
-    }
-
-    fn set_stack_ptr(&mut self, val: u64) {
-        self.rsp = Some(val);
-    }
-
-    fn iter() -> impl Iterator<Item = Register> {
-        [X86_64::RSP, X86_64::RBP, X86_64::RA].into_iter()
     }
 }

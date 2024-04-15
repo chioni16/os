@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 def page_table_indices(virtual_addr):
     off = virtual_addr & 0xfff
     p1 = (virtual_addr >> 12) & 0o777

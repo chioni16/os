@@ -15,3 +15,6 @@ gimli = { version = "0.27.2", default-features = false, features = ["read"] }
 
 [lib]
 crate-type = ["staticlib"]
+
+[features]
+eh_frame = []
