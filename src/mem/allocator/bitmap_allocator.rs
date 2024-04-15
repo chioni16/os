@@ -1,9 +1,9 @@
-use core::ptr::{addr_of, addr_of_mut};
 use crate::locks::SpinLock;
 use crate::mem::frame::Frame;
-use crate::mem::{PhysicalAddress, VirtualAddress, align_up, PAGE_SIZE};
+use crate::mem::{align_up, PhysicalAddress, VirtualAddress, PAGE_SIZE};
 use crate::multiboot::{MemMapEntry, MemMapEntryType, MultibootInfo};
 use crate::HIGHER_HALF;
+use core::ptr::{addr_of, addr_of_mut};
 use log::{info, trace};
 
 extern crate alloc;
@@ -37,8 +37,7 @@ impl BitMapAllocator {
 
 impl FrameAllocator for BitMapAllocator {
     fn allocate_frame(&mut self) -> Option<Frame> {
-        self.0.as_mut().unwrap().alloc(1)
-        .map(|addr| unsafe {
+        self.0.as_mut().unwrap().alloc(1).map(|addr| unsafe {
             // set all the bytes to zero
             let virt_addr = addr.0 + addr_of!(HIGHER_HALF) as u64;
             let slice = core::slice::from_raw_parts_mut(virt_addr as *mut u8, PAGE_SIZE as usize);
@@ -122,25 +121,30 @@ impl BitMap {
             let virt_addr = elf_sections.clone().map(|s| s.end()).max().unwrap();
             virtual_to_physical(virt_addr)
         };
-        let kernel_end_frame = Frame::containing_address(kernel_end);
+
+        let unavailable_end = multiboot_info
+            .multiboot_modules()
+            .map(|module| PhysicalAddress::new(module.mod_end as u64))
+            .fold(kernel_end, |acc, addr| core::cmp::max(acc, addr));
+        let unavailable_end_frame = Frame::containing_address(unavailable_end);
 
         // choose the location where to place the bitmap
-        // placed after the kernel code
+        // placed after the kernel code + multiboot2 modules
         let bit_map_start_addr = ram_regions
             .clone()
             // possible locations that meet the criteria
-            // 1. located after the kernel code
+            // 1. located after the kernel code + multiboot2 modules
             // 2. has enough place to accommodate the bitmap
             .filter_map(|region| {
-                if region.start() > kernel_end {
+                if region.start() > unavailable_end {
                     let proposed_start = align_up(region.start().to_inner(), PAGE_SIZE);
                     if region.end().to_inner() - proposed_start >= bitmap_size_in_bytes {
                         Some(PhysicalAddress::new(proposed_start))
                     } else {
                         None
                     }
-                } else if region.end() > kernel_end {
-                    let proposed_start = align_up(kernel_end.to_inner(), PAGE_SIZE);
+                } else if region.end() > unavailable_end {
+                    let proposed_start = align_up(unavailable_end.to_inner(), PAGE_SIZE);
                     if region.end().to_inner() - proposed_start >= bitmap_size_in_bytes {
                         Some(PhysicalAddress::new(proposed_start))
                     } else {
@@ -163,8 +167,8 @@ impl BitMap {
             );
         }
         trace!("highest ram address: {:#x?}", highest_ram_addr);
-        trace!("kernel end: {:#x?}", kernel_end);
-        trace!("kernel end frame: {:#x?}", kernel_end_frame);
+        trace!("unavailable end: {:#x?}", unavailable_end);
+        trace!("unavailable end frame: {:#x?}", unavailable_end_frame);
         trace!("bitmap start address: {:#x?}", bit_map_start_addr);
         trace!(
             "bitmap size: {:#x} bytes ({:#x} pages)",
@@ -201,14 +205,14 @@ impl BitMap {
         // last frame of the range should also be set / unset
         // using exclusive ranges doesn't do this
 
-        for frame in 0..kernel_end_frame.number + 1 {
+        for frame in 0..unavailable_end_frame.number + 1 {
             bitmap.set(frame as usize);
             bitmap.reserved_ram_frames += 1;
         }
         trace!(
             "bitmap: reserved ram frames: from {:#x} to {:#x}",
             0,
-            kernel_end_frame.number
+            unavailable_end_frame.number
         );
 
         // mark frames that host bitmap as unavailable
@@ -236,7 +240,7 @@ impl BitMap {
             .for_each(|frame| {
                 bitmap.set(frame as usize);
                 // remove non-ram frames that were previously included
-                if frame <= kernel_end_frame.number {
+                if frame <= unavailable_end_frame.number {
                     bitmap.reserved_ram_frames -= 1;
                 }
             });
@@ -250,31 +254,32 @@ impl BitMap {
             bitmap.reserved_ram_frames, bitmap.used_ram_frames, bitmap.ram_frames,
         );
 
-        // WARNING: extending the last section to include the bitmap. Will it come back to bite me in the ass?
-        // permissions: as we ensure that the last section before bitmap is BSS (last allocatable section in linker script), the permissions match (read, write, no execute)
-        unsafe {
-            trace!("changing the last section end");
-            let kernel_end_virt = kernel_end.to_virt().unwrap();
-            trace!("kernel end virt: {:#x?}", kernel_end_virt);
-            // find the section just before the bitmap
-            let mut sections = multiboot_info
-                .multiboot_elf_tag_addrs()
-                .unwrap();
-            trace!("got sections");
-            let section = sections.find(|section| (&**section).start() <= kernel_end_virt && kernel_end_virt <= (&**section).end()).unwrap(); 
-            trace!("section: {:#x?}", section);
+        // // WARNING: extending the last section to include the bitmap. Will it come back to bite me in the ass?
+        // // permissions: as we ensure that the last section before bitmap is BSS (last allocatable section in linker script), the permissions match (read, write, no execute)
+        // unsafe {
+        //     trace!("changing the last section end");
+        //     let kernel_end_virt = kernel_end.to_virt().unwrap();
+        //     trace!("kernel end virt: {:#x?}", kernel_end_virt);
+        //     // find the section just before the bitmap
+        //     let mut sections = multiboot_info.multiboot_elf_tag_addrs().unwrap();
+        //     trace!("got sections");
+        //     let section = sections
+        //         .find(|section| {
+        //             (&**section).start() <= kernel_end_virt && kernel_end_virt <= (&**section).end()
+        //         })
+        //         .unwrap();
+        //     trace!("section: {:#x?}", section);
 
-            // subtract by 1 as the range returned is half open and the slice members are each of size 1 byte
-            let new_end = bitmap.inner.as_mut_ptr_range().end as u64 - 1; 
-            trace!("new_end: {:#x?}", new_end);
-            let new_size = new_end - (*section).start().to_inner();
-            trace!("new_size: {:#x?}", new_size);
+        //     // subtract by 1 as the range returned is half open and the slice members are each of size 1 byte
+        //     let new_end = bitmap.inner.as_mut_ptr_range().end as u64 - 1;
+        //     trace!("new_end: {:#x?}", new_end);
+        //     let new_size = new_end - (*section).start().to_inner();
+        //     trace!("new_size: {:#x?}", new_size);
 
-            let sh_size = addr_of_mut!((*section).sh_size);
-            trace!("sh_size: {:#x?}", sh_size);
-            core::ptr::write_unaligned(sh_size, new_size);
-
-        }
+        //     let sh_size = addr_of_mut!((*section).sh_size);
+        //     trace!("sh_size: {:#x?}", sh_size);
+        //     core::ptr::write_unaligned(sh_size, new_size);
+        // }
         bitmap
     }
 
@@ -344,13 +349,12 @@ impl BitMap {
     }
 }
 
-
-// WARNING: 
+// WARNING:
 // NEVER use page table to translate physical addresses
 // 1. There will be a chance for deadlock due to attempts to acquire a lock in a nested manner.
 // 2. No need to use the page table as allocator code is always run in kernel mode and the translation can be done by using the fixed offset.
 fn virtual_to_physical(virt_addr: VirtualAddress) -> PhysicalAddress {
-    let higher_half = unsafe { addr_of!(HIGHER_HALF)} as u64;
+    let higher_half = unsafe { addr_of!(HIGHER_HALF) } as u64;
     if virt_addr.to_inner() < higher_half {
         panic!("Invalid virtual address: {:#x?}", virt_addr);
     }

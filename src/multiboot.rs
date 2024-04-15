@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 use core::marker::PhantomData;
 use core::ptr;
+use log::trace;
 
 use crate::mem::{PhysicalAddress, VirtualAddress};
 
@@ -203,114 +204,207 @@ impl MultibootInfo {
         self.base.offset(self.size() - 1)
     }
 
-    fn find_tags_of_type(&self, tag_type: u32) -> Option<(VirtualAddress, u32)> {
-        let addr = unsafe { self.base.to_virt().unwrap() };
+    fn find_tags_of_type(&self, tag_type: u32) -> TagIterator {
         // SAFETY:
         // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
         // start to start + size
-        unsafe {
-            let total_length = ptr::read_unaligned(addr.as_const_ptr());
-            assert_eq!(ptr::read_unaligned(addr.offset(4).as_const_ptr::<u32>()), 0);
-            let mut cur_len = 8u32;
-            while cur_len < total_length {
-                let cur_type =
-                    ptr::read_unaligned(addr.offset(cur_len as u64).as_const_ptr::<u32>());
-                let cur_size =
-                    ptr::read_unaligned(addr.offset(cur_len as u64 + 4).as_const_ptr::<u32>());
+        let (multiboot_start, multiboot_size) = unsafe {
+            let multiboot_start = self.base.to_virt().unwrap();
+            let multiboot_size = ptr::read_unaligned(multiboot_start.as_const_ptr());
+            assert_eq!(
+                ptr::read_unaligned(multiboot_start.offset(4).as_const_ptr::<u32>()),
+                0
+            );
+            (multiboot_start, multiboot_size)
+        };
 
-                if cur_type == tag_type {
-                    let start_addr = addr.offset(cur_len as u64);
-                    return Some((start_addr, cur_size));
-                }
-
-                if cur_type == 0 {
-                    cur_len += 8;
-                    continue;
-                }
-
-                cur_len += cur_size;
-
-                // Padding to maintain 8 byte alignment at the beginning of a new tag
-                let diff = (8 - cur_len as i64 + (cur_len as i64 / 8) * 8) % 8;
-                assert!(diff >= 0);
-                cur_len += diff as u32;
-            }
-
-            assert_eq!(cur_len, total_length);
+        TagIterator {
+            tag_type,
+            multiboot_start,
+            multiboot_size,
+            cur_len: 8,
         }
-
-        None
     }
 
-    pub fn multiboot_elf_tags(&self) -> Option<MultibootIter<Elf64SectionHeader>> {
-        self.find_tags_of_type(9).map(|(start_addr, total_size)| {
+    pub fn multiboot_modules(&self) -> impl Iterator<Item = MultibootModule> {
+        self.find_tags_of_type(3).map(|(start_addr, total_size)| {
             // SAFETY:
             // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
             // start to start + size
             unsafe {
-                // consider padding
-                let entry_size = ptr::read_unaligned(start_addr.offset(12).as_const_ptr::<u16>());
-                assert_eq!(
-                    entry_size as usize,
-                    core::mem::size_of::<Elf64SectionHeader>()
+                let mod_start = ptr::read_unaligned(start_addr.offset(8).as_const_ptr::<u32>());
+                let mod_end = ptr::read_unaligned(start_addr.offset(12).as_const_ptr::<u32>());
+                let s = core::slice::from_raw_parts(
+                    start_addr.offset(16).as_const_ptr(),
+                    total_size as usize - 16,
                 );
-            }
 
-            MultibootIter {
-                start: start_addr,
-                cur: 20,
-                total_size,
-                _marker: PhantomData,
+                let module = MultibootModule {
+                    size: total_size,
+                    mod_start,
+                    mod_end,
+                    string: s,
+                };
+
+                trace!("found module: {:#x?}", module);
+
+                module
             }
         })
+    }
+
+    pub fn multiboot_elf_tags(&self) -> Option<MultibootIter<Elf64SectionHeader>> {
+        self.find_tags_of_type(9)
+            .next()
+            .map(|(start_addr, total_size)| {
+                // SAFETY:
+                // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
+                // start to start + size
+                unsafe {
+                    // consider padding
+                    let entry_size =
+                        ptr::read_unaligned(start_addr.offset(12).as_const_ptr::<u16>());
+                    assert_eq!(
+                        entry_size as usize,
+                        core::mem::size_of::<Elf64SectionHeader>()
+                    );
+                }
+
+                MultibootIter {
+                    start: start_addr,
+                    cur: 20,
+                    total_size,
+                    _marker: PhantomData,
+                }
+            })
     }
 
     // TODO: use macros to avoid repetition
     pub fn multiboot_elf_tag_addrs(&self) -> Option<MultibootAddrIter<Elf64SectionHeader>> {
-        self.find_tags_of_type(9).map(|(start_addr, total_size)| {
-            // SAFETY:
-            // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
-            // start to start + size
-            unsafe {
-                // consider padding
-                let entry_size = ptr::read_unaligned(start_addr.offset(12).as_const_ptr::<u16>());
-                assert_eq!(
-                    entry_size as usize,
-                    core::mem::size_of::<Elf64SectionHeader>()
-                );
-            }
+        self.find_tags_of_type(9)
+            .next()
+            .map(|(start_addr, total_size)| {
+                // SAFETY:
+                // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
+                // start to start + size
+                unsafe {
+                    // consider padding
+                    let entry_size =
+                        ptr::read_unaligned(start_addr.offset(12).as_const_ptr::<u16>());
+                    assert_eq!(
+                        entry_size as usize,
+                        core::mem::size_of::<Elf64SectionHeader>()
+                    );
+                }
 
-            MultibootAddrIter {
-                start: start_addr,
-                cur: 20,
-                total_size,
-                _marker: PhantomData,
-            }
-        })
+                MultibootAddrIter {
+                    start: start_addr,
+                    cur: 20,
+                    total_size,
+                    _marker: PhantomData,
+                }
+            })
     }
 
     // assumes presence of only one memory tags entry
     pub fn multiboot_mem_tags(&self) -> Option<MultibootIter<MemMapEntry>> {
-        self.find_tags_of_type(6).map(|(start_addr, total_size)| {
-            // SAFETY:
-            // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
-            // start to start + size
-            unsafe {
-                let entry_size = ptr::read_unaligned(start_addr.offset(8).as_const_ptr::<u32>());
-                assert_eq!(entry_size as usize, core::mem::size_of::<MemMapEntry>());
-                // supports only entry_version 0
-                assert_eq!(
-                    ptr::read_unaligned(start_addr.offset(12).as_const_ptr::<u32>()),
-                    0
-                );
-            }
+        self.find_tags_of_type(6)
+            .next()
+            .map(|(start_addr, total_size)| {
+                // SAFETY:
+                // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
+                // start to start + size
+                unsafe {
+                    let entry_size =
+                        ptr::read_unaligned(start_addr.offset(8).as_const_ptr::<u32>());
+                    assert_eq!(entry_size as usize, core::mem::size_of::<MemMapEntry>());
+                    // supports only entry_version 0
+                    assert_eq!(
+                        ptr::read_unaligned(start_addr.offset(12).as_const_ptr::<u32>()),
+                        0
+                    );
+                }
 
-            MultibootIter {
-                start: start_addr,
-                cur: 16,
-                total_size,
-                _marker: PhantomData,
-            }
-        })
+                MultibootIter {
+                    start: start_addr,
+                    cur: 16,
+                    total_size,
+                    _marker: PhantomData,
+                }
+            })
     }
+}
+
+struct TagIterator {
+    tag_type: u32,
+    multiboot_start: VirtualAddress,
+    multiboot_size: u32,
+    cur_len: u32,
+}
+
+impl Iterator for TagIterator {
+    // start address and the size of the tag
+    type Item = (VirtualAddress, u32);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // tag type 0 represents padding
+        assert!(self.tag_type != 0);
+
+        if self.cur_len >= self.multiboot_size {
+            assert_eq!(self.cur_len, self.multiboot_size);
+            return None;
+        }
+        // SAFETY:
+        // we are only dereferencing the addresses that fall within the limits of what the multiboot protocol returns
+        // start to start + size
+        unsafe {
+            while self.cur_len < self.multiboot_size {
+                let cur_type = ptr::read_unaligned(
+                    self.multiboot_start
+                        .offset(self.cur_len as u64)
+                        .as_const_ptr::<u32>(),
+                );
+                let cur_size = ptr::read_unaligned(
+                    self.multiboot_start
+                        .offset(self.cur_len as u64 + 4)
+                        .as_const_ptr::<u32>(),
+                );
+
+                let ret = if cur_type == self.tag_type {
+                    let start_addr = self.multiboot_start.offset(self.cur_len as u64);
+                    Some((start_addr, cur_size))
+                } else {
+                    None
+                };
+
+                if cur_type == 0 {
+                    self.cur_len += 8;
+                    continue;
+                }
+
+                self.cur_len += cur_size;
+
+                // Padding to maintain 8 byte alignment at the beginning of a new tag
+                let diff = (8 - self.cur_len as i64 + (self.cur_len as i64 / 8) * 8) % 8;
+                assert!(diff >= 0);
+                self.cur_len += diff as u32;
+
+                if ret.is_some() {
+                    return ret;
+                }
+            }
+        }
+
+        assert_eq!(self.cur_len, self.multiboot_size);
+
+        None
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct MultibootModule {
+    pub(crate) size: u32,
+    pub(crate) mod_start: u32,
+    pub(crate) mod_end: u32,
+    pub(crate) string: &'static [u8],
 }

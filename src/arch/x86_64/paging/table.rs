@@ -76,7 +76,9 @@ impl P4Table {
         // use the heap allocator free frame method
         let virt_addr = table as *const Table as u64;
         let phys_addr = PhysicalAddress::new(virt_addr - addr_of!(HIGHER_HALF) as u64);
-        HEAP_ALLOCATOR.lock().deallocate_frame(Frame::containing_address(phys_addr));
+        HEAP_ALLOCATOR
+            .lock()
+            .deallocate_frame(Frame::containing_address(phys_addr));
     }
 
     pub fn map_huge_1GiB(

@@ -7,6 +7,7 @@ rust_bin := target/x86_64-unknown-none/debug/libos.a
 conf_dir := config
 iso_dir := target/isofiles
 kernel := ${bin_dir}/kernel
+multiboot_modules := multiboot_modules
 
 .PHONY: all
 all: ${bin_dir}/os.iso
@@ -25,6 +26,7 @@ ${bin_dir}/os.iso: ${kernel}
 	mkdir -p ${iso_dir}/boot/grub
 	cp ${conf_dir}/grub.cfg ${iso_dir}/boot/grub
 	cp ${kernel} ${iso_dir}/boot/
+	cp ${multiboot_modules}/* ${iso_dir}/boot/
 	grub-mkrescue -o ${bin_dir}/os.iso ${iso_dir}
 	rm -rf ${iso_dir}
 
