@@ -45,7 +45,6 @@ pub(super) fn init_ap(madt: &AcpiSdt) {
         let base = msr_apic_reg_base & BASE_ADDR;
         crate::println!("base: {:#x?}", base);
 
-        // TODO: MMIO module and mapping the physical addresses properly with strongly uncacheable properties
         let base = PhysicalAddress::new(base);
         let mmio = Mmio::new(base, base.offset(0x400));
         let part1: *mut u32 = base.offset(OFFSET1).to_virt().unwrap().as_mut_ptr();

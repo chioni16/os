@@ -20,14 +20,9 @@ impl PhysicalAddress {
         Self::new(self.0 + offset)
     }
 
+    // TODO: remove Option
     pub const unsafe fn to_virt(&self) -> Option<VirtualAddress> {
-        // 4 GiB
-        // size of available ram
-        // if self.0 < 0x100000000 {
         Some(VirtualAddress::new(self.0 + HIGHER_HALF))
-        // } else {
-        //     None
-        // }
     }
 }
 

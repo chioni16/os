@@ -89,24 +89,6 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
     }
 }
 
-fn a() {
-    crate::println!("a start");
-    b();
-    crate::println!("a end");
-}
-
-fn b() {
-    crate::println!("b start");
-    c();
-    crate::println!("b end");
-}
-
-fn c() {
-    crate::println!("c start");
-    panic!("hello");
-    crate::println!("c end");
-}
-
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("{}", info);

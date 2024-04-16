@@ -86,8 +86,6 @@ impl Entry {
     }
 
     pub fn phys_addr(&self) -> PhysicalAddress {
-        // PhysicalAddress::new(self.0 & (((1 << 40) - 1) * PAGE_SIZE))
-        // crate::println!("phys_addr: {:#x?}", self.0);
         PhysicalAddress::new(self.0 & PHYSADDR_MASK)
     }
 

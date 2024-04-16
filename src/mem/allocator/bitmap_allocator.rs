@@ -3,7 +3,7 @@ use crate::mem::frame::Frame;
 use crate::mem::{align_up, PhysicalAddress, VirtualAddress, PAGE_SIZE};
 use crate::multiboot::{MemMapEntry, MemMapEntryType, MultibootInfo};
 use crate::HIGHER_HALF;
-use core::ptr::{addr_of, addr_of_mut};
+use core::ptr::addr_of;
 use log::{info, trace};
 
 extern crate alloc;
@@ -77,7 +77,6 @@ unsafe impl GlobalAlloc for SpinLock<BitMapAllocator> {
 #[derive(Debug)]
 struct BitMap {
     inner: &'static mut [u8],
-    // no_touch_end_frame: Frame,
     // last_used_index: u64,
 
     // statistics
@@ -122,6 +121,7 @@ impl BitMap {
             virtual_to_physical(virt_addr)
         };
 
+        // represents the end of kernel and the loaded multiboot2 modules
         let unavailable_end = multiboot_info
             .multiboot_modules()
             .map(|module| PhysicalAddress::new(module.mod_end as u64))
@@ -192,9 +192,8 @@ impl BitMap {
         };
         let mut bitmap = Self {
             inner,
-            // no_touch_end_frame: (kernel_end_frame.number + bitmap_size_in_pages),
-
             // last_used_index: 0,
+
             reserved_ram_frames: 0,
             used_ram_frames: 0,
             ram_frames,
@@ -254,7 +253,8 @@ impl BitMap {
             bitmap.reserved_ram_frames, bitmap.used_ram_frames, bitmap.ram_frames,
         );
 
-        // // WARNING: extending the last section to include the bitmap. Will it come back to bite me in the ass?
+        // // WARNING: old code (not sure if needed)
+        // // extending the last section to include the bitmap. Will it come back to bite me in the ass?
         // // permissions: as we ensure that the last section before bitmap is BSS (last allocatable section in linker script), the permissions match (read, write, no execute)
         // unsafe {
         //     trace!("changing the last section end");

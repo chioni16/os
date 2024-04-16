@@ -210,3 +210,5 @@ impl From<MemoryTypes> for u64 {
         })
     }
 }
+
+// TODO: support variable range registers

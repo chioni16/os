@@ -18,9 +18,9 @@ use crate::{
     multiboot::{MemMapEntryType, MultibootInfo},
 };
 
-const _1GiB: u64 = 1 * 1024u64.pow(3);
-const _2MiB: u64 = 2 * 1024u64.pow(2);
-const _4KiB: u64 = 4 * 1024u64.pow(1);
+const _1_GI_B: u64 = 1 * 1024u64.pow(3);
+const _2_MI_B: u64 = 2 * 1024u64.pow(2);
+const _4_KI_B: u64 = 4 * 1024u64.pow(1);
 
 pub static ACTIVE_PAGETABLE: SpinLock<ActiveP4Table> = ActiveP4Table::locked();
 
@@ -34,9 +34,8 @@ pub(super) fn init(multiboot_info: &MultibootInfo) {
         if caps.supports_fixed_range_regs && def_type.fixed_range_mtrr_enabled {
             let vga_start = PhysicalAddress::new(0xb8000);
             let mt = unsafe { mtrr::read_fixed_range_mtrr(vga_start) };
-            info!("MTRR Fixed reg for VGA: {:#x?}", unsafe{rdmsr(0x259)});
+            info!("MTRR Fixed reg for VGA: {:#x?}", mt);
             // unsafe { mtrr::write_fixed_range_mtrr(vga_start, mtrr::MemoryType::WriteCombining)};
-            // let mt = unsafe { mtrr::read_fixed_range_mtrr(vga_start) };
             let mt = mtrr::MemoryTypes([mtrr::MemoryType::WriteCombining; 8]);
             unsafe { wrmsr(0x259, mt.into())}
             info!("changed MTRR Fixed reg for VGA to: {:#x?}", unsafe { rdmsr(0x259)});
@@ -57,17 +56,8 @@ pub(super) fn init(multiboot_info: &MultibootInfo) {
     // TODO: relying on firmware setting up the MTRRs correctly for MMIO. Map the MMIO pages to UC using PAT
     // Create a new `Mmio` struct and use RAII to remove paging entries on drop
 
-    trace!("before new_table init");
     let mut new_page_table = P4Table::new();
-    trace!("after new_table init");
 
-    for region in multiboot_info.multiboot_mem_tags().unwrap() {
-        trace!("region: {:#x?}", region);
-    }
-
-    // let ram_regions = multiboot_info.multiboot_mem_tags().unwrap()
-    //     .clone()
-    //     .filter(|region| region.entry_type() == MemMapEntryType::Ram);
     for region in multiboot_info.multiboot_mem_tags().unwrap() {
         trace!(
             "region: start: {:#x?}, end: {:#x?}",
@@ -92,59 +82,25 @@ pub(super) fn init(multiboot_info: &MultibootInfo) {
                     trace!("allocating 1GiB huge page");
                     let flags_to_set = flags_to_set | EntryFlags::HUGE_PAGE;
                     new_page_table.map_huge_1GiB(virt_addr, phys_addr, flags_to_set);
-                    _1GiB
+                    _1_GI_B
                 }
                 MapSize::_2MiB => {
                     trace!("allocating 2MiB huge page");
                     let flags_to_set = flags_to_set | EntryFlags::HUGE_PAGE;
                     new_page_table.map_huge_2MiB(virt_addr, phys_addr, flags_to_set);
-                    _2MiB
+                    _2_MI_B
                 }
                 MapSize::_4KiB => {
                     trace!("allocating 4KiB page");
                     new_page_table.map_4KiB(virt_addr, phys_addr, flags_to_set);
-                    _4KiB
+                    _4_KI_B
                 }
             };
 
             cur_start += cur_size;
             rem_size -= cur_size;
         }
-        // let flags_to_set = EntryFlags::PRESENT | EntryFlags::WRITABLE;
-        // for frame in Frame::range_inclusive(
-        //     Frame::containing_address(region.start()),
-        //     Frame::containing_address(region.end()),
-        // ) {
-        //     let phys_addr = frame.start_address();
-        //     let virt_addr = unsafe { phys_addr.to_virt().unwrap() };
-        //     new_page_table.map(virt_addr, phys_addr, flags_to_set);
-        // }
     }
-    // let elf_sections = multiboot_info
-    //     .multiboot_elf_tags()
-    //     .unwrap()
-    //     .filter(|s| s.flags().contains(Elf64SectionFlags::SHF_ALLOC));
-    // for section in elf_sections {
-    //     trace!("section: start: {:#x?}, end: {:#x?}", section.start(), section.end());
-    //     // let flags_to_set = EntryFlags::from_elf_section_flags(&section);
-    //     let flags_to_set = EntryFlags::PRESENT | EntryFlags::WRITABLE;
-    //     let start_virtual = section.start().to_inner();
-    //     let end_virtual = section.end().to_inner();
-    //     let start_physical =
-    //         PhysicalAddress::new(start_virtual - unsafe { addr_of!(HIGHER_HALF) } as u64);
-    //     let end_physical =
-    //         PhysicalAddress::new(end_virtual - unsafe { addr_of!(HIGHER_HALF) } as u64);
-    //     for frame in Frame::range_inclusive(
-    //         Frame::containing_address(start_physical),
-    //         Frame::containing_address(end_physical),
-    //     ) {
-    //         let phys_addr = frame.start_address();
-    //         let virt_addr = unsafe { phys_addr.to_virt().unwrap() };
-    //         new_page_table.map(virt_addr, phys_addr, flags_to_set);
-    //     }
-    // }
-
-    // // map frames used by allocator
 
     // TODO: VGA mem move this to MMIO
     for frame in Frame::range_inclusive(
@@ -162,7 +118,7 @@ pub(super) fn init(multiboot_info: &MultibootInfo) {
         );
     }
 
-    // // TODO: EBDA to MMIO????
+    // TODO: EBDA to MMIO????
     for frame in Frame::range_inclusive(
         &Frame::containing_address(PhysicalAddress::new(0xE0000)),
         &Frame::containing_address(PhysicalAddress::new(0xFFFFF)),
@@ -179,13 +135,9 @@ pub(super) fn init(multiboot_info: &MultibootInfo) {
         );
     }
 
-    trace!("after new_table map");
     let mut guard = ACTIVE_PAGETABLE.lock();
     let a = guard.switch(new_page_table);
     drop(guard);
-    trace!("switched");
-    trace!("lock: {:#x?}", ACTIVE_PAGETABLE);
-    trace!("old_p4: {:#x?}", a);
 }
 
 pub fn translate_using_current_page_table(virt_addr: VirtualAddress) -> Option<PhysicalAddress> {
@@ -214,11 +166,11 @@ enum MapSize {
 
 fn find_best_fit(start: u64, size: u64) -> MapSize {
     // first check alignment and then if the region is of sufficient size
-    if start % _1GiB == 0 && size >= _1GiB {
+    if start % _1_GI_B == 0 && size >= _1_GI_B {
         MapSize::_1GiB
-    } else if start % _2MiB == 0 && size >= _2MiB {
+    } else if start % _2_MI_B == 0 && size >= _2_MI_B {
         MapSize::_2MiB
-    } else if start % _4KiB == 0 && size >= _4KiB {
+    } else if start % _4_KI_B == 0 && size >= _4_KI_B {
         MapSize::_4KiB
     } else {
         unreachable!(

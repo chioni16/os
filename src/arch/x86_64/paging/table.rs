@@ -297,7 +297,7 @@ impl P4Table {
 
 impl Drop for P4Table {
     fn drop(&mut self) {
-        trace!("drop started");
+        trace!("dropping page table");
         // SAFETY: all of this code should run from the kernel space
         // So, even though the page tables are changed to kernel's page table on entering kernel space from userspace,
         // as the kernel memory is mapped to the higher half of every userspace program, the translation by adding a fixed offset should yield valid addresses
