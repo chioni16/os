@@ -41,7 +41,7 @@ extern "C" {
 #[no_mangle]
 pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
     log::set_logger(&LOGGER)
-        .map(|()| log::set_max_level(LevelFilter::Trace))
+        .map(|()| log::set_max_level(LevelFilter::Info))
         .unwrap();
 
     unsafe {
@@ -87,6 +87,24 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
             core::arch::asm!("hlt");
         }
     }
+}
+
+fn a() {
+    crate::println!("a start");
+    b();
+    crate::println!("a end");
+}
+
+fn b() {
+    crate::println!("b start");
+    c();
+    crate::println!("b end");
+}
+
+fn c() {
+    crate::println!("c start");
+    panic!("hello");
+    crate::println!("c end");
 }
 
 #[panic_handler]

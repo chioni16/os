@@ -1,15 +1,18 @@
 pub mod entry;
 mod mmio;
+mod mtrr;
 mod page;
+mod pat;
 mod table;
 
 pub(super) use mmio::Mmio;
 
 use entry::EntryFlags;
-use log::trace;
+use log::{info, trace};
 pub use table::{ActiveP4Table, P4Table};
 
 use crate::{
+    arch::x86_64::{paging::pat::{read_pat_msr, write_pat_msr, MemoryType}, rdmsr, wrmsr},
     locks::SpinLock,
     mem::{align_down, align_up, frame::Frame, PhysicalAddress, VirtualAddress, PAGE_SIZE},
     multiboot::{MemMapEntryType, MultibootInfo},
@@ -22,10 +25,37 @@ const _4KiB: u64 = 4 * 1024u64.pow(1);
 pub static ACTIVE_PAGETABLE: SpinLock<ActiveP4Table> = ActiveP4Table::locked();
 
 pub(super) fn init(multiboot_info: &MultibootInfo) {
+    if mtrr::supports_mtrr() {
+        info!("Supports MTRR");
+        let caps = unsafe { mtrr::read_mtrr_cap_msr() };
+        info!("Capabilities: {:#x?}", caps);
+        let def_type = unsafe { mtrr::read_mtrr_default_type_reg() };
+        info!("Default Type: {:#x?}", def_type);
+        if caps.supports_fixed_range_regs && def_type.fixed_range_mtrr_enabled {
+            let vga_start = PhysicalAddress::new(0xb8000);
+            let mt = unsafe { mtrr::read_fixed_range_mtrr(vga_start) };
+            info!("MTRR Fixed reg for VGA: {:#x?}", unsafe{rdmsr(0x259)});
+            // unsafe { mtrr::write_fixed_range_mtrr(vga_start, mtrr::MemoryType::WriteCombining)};
+            // let mt = unsafe { mtrr::read_fixed_range_mtrr(vga_start) };
+            let mt = mtrr::MemoryTypes([mtrr::MemoryType::WriteCombining; 8]);
+            unsafe { wrmsr(0x259, mt.into())}
+            info!("changed MTRR Fixed reg for VGA to: {:#x?}", unsafe { rdmsr(0x259)});
+        }
+    }
+
+    if pat::supports_pat() {
+        info!("supports PAT");
+        let mut pas = unsafe { read_pat_msr() };
+        info!("PAT {:#x?}", pas);
+        pas.0[1] = MemoryType::WriteCombining;
+        unsafe { write_pat_msr(pas) };
+        info!("PAT {:#x?}", unsafe { read_pat_msr() });
+    }
+
     // TODO: properly map the sections respecting their permissions
 
     // TODO: relying on firmware setting up the MTRRs correctly for MMIO. Map the MMIO pages to UC using PAT
-    // Create a new `MMIO` struct and use RAII to remove paging entries on drop
+    // Create a new `Mmio` struct and use RAII to remove paging entries on drop
 
     trace!("before new_table init");
     let mut new_page_table = P4Table::new();
@@ -129,7 +159,6 @@ pub(super) fn init(multiboot_info: &MultibootInfo) {
             EntryFlags::PRESENT
                 | EntryFlags::WRITABLE
                 | EntryFlags::WRITE_THROUGH
-                | EntryFlags::NO_CACHE,
         );
     }
 

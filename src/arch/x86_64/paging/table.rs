@@ -466,3 +466,16 @@ unsafe fn tlb_flush(addr: VirtualAddress) {
         core::arch::asm!("invlpg [{}]", in(reg) addr.to_inner(), options(nostack, preserves_flags));
     }
 }
+
+// SAFETY: paging should be enabled
+#[inline]
+pub(super) unsafe fn tlb_flush_all() {
+    unsafe {
+        core::arch::asm!(
+            "mov {tmp}, cr3",
+            "mov cr3, {tmp}",
+            tmp = out(reg) _,
+            options(nostack)
+        );
+    }
+}
