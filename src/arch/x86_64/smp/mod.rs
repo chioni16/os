@@ -1,8 +1,10 @@
+extern crate alloc;
+use alloc::vec::Vec;
+
 use crate::{
     arch::x86_64::{
-        acpi::{AcpiSdt, AcpiSdtType, MadtEntry},
-        apic::{APIC_ENABLE, MSR_APIC_REG_BASE},
-        paging::Mmio,
+        acpi::MadtEntry,
+        apic::lapic::{APIC_ENABLE, LAPIC_BASE_ADDR_MASK, MSR_APIC_REG_BASE},
         rdmsr,
     },
     mem::PhysicalAddress,
@@ -13,7 +15,6 @@ use core::{
 };
 
 const IS_BSP: u64 = 1 << 8;
-const BASE_ADDR: u64 = !0b1111_1111_1111;
 const OFFSET1: u64 = 0x300;
 const OFFSET2: u64 = 0x310;
 
@@ -22,7 +23,12 @@ extern "C" {
     static AP_START: u8;
 }
 
-pub(super) fn init_ap(madt: &AcpiSdt) {
+pub(super) fn is_bsp() -> bool {
+    let msr_apic_reg_base = unsafe { rdmsr(MSR_APIC_REG_BASE) };
+    (msr_apic_reg_base & IS_BSP) != 1
+}
+
+pub(super) fn init_ap(madt_entries: &Vec<MadtEntry>) {
     unsafe {
         let msr_apic_reg_base = rdmsr(MSR_APIC_REG_BASE);
         crate::println!("APIC_BASE: {:#x}", msr_apic_reg_base);
@@ -42,11 +48,13 @@ pub(super) fn init_ap(madt: &AcpiSdt) {
         // crate::println!("BASE: {:#x}", base);
         crate::println!("ap_start: {:#x?}", addr_of!(AP_START) as usize);
         let msr_apic_reg_base = rdmsr(MSR_APIC_REG_BASE);
-        let base = msr_apic_reg_base & BASE_ADDR;
+        let base = msr_apic_reg_base & LAPIC_BASE_ADDR_MASK;
         crate::println!("base: {:#x?}", base);
 
+        // MMIO lapic register addresses are already mapped in the page table
+        // when lapic is initialised
+
         let base = PhysicalAddress::new(base);
-        let mmio = Mmio::new(base, base.offset(0x400));
         let part1: *mut u32 = base.offset(OFFSET1).to_virt().unwrap().as_mut_ptr();
         let part2: *mut u32 = base.offset(OFFSET2).to_virt().unwrap().as_mut_ptr();
 
@@ -56,10 +64,7 @@ pub(super) fn init_ap(madt: &AcpiSdt) {
         const SIPI_DATA1: u32 = 0b0000_0000_0000_0000_0100_0110_0000_0000;
         const SIPI_DATA2: u32 = 0b0000_0000_0000_0000_0000_0000_0000_0000;
 
-        let AcpiSdtType::Madt { entries, .. } = &madt.fields else {
-            unreachable!()
-        };
-        for entry in entries {
+        for entry in madt_entries {
             if let MadtEntry::LocalApic(lapic) = entry {
                 if lapic.aid == bspid {
                     continue;
@@ -109,6 +114,5 @@ pub(super) fn init_ap(madt: &AcpiSdt) {
                 // TODO: SIPI2?
             }
         }
-        drop(mmio);
     }
 }

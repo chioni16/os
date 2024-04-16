@@ -49,6 +49,11 @@ SECTIONS {
         *(.data.rel.ro.local*) *(.data.rel.ro .data.rel.ro.*)
     } :rodata
 
+    .dynamic ALIGN (4K) : AT (ADDR (.dynamic) - HIGHER_HALF)
+    {
+        *(.dynamic .dynamic.*)
+    } :dynamic
+
     .bss ALIGN (4K) : AT (ADDR (.bss) - HIGHER_HALF)
     {
         *(.bss .bss.*)

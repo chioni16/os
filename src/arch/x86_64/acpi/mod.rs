@@ -43,18 +43,18 @@ pub(super) struct LocalApic {
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub(super) struct IoApic {
-    ioaid: u8,
-    reserved: u8,
-    ioapic_addr: u32,
-    gsib: u32,
+    pub ioaid: u8,
+    pub reserved: u8,
+    pub ioapic_addr: u32,
+    pub gsib: u32,
 }
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub(super) struct IoApicIntSourceOverride {
-    bus_source: u8,
-    irq_source: u8,
-    gsi: u32,
-    flags: u16,
+    pub bus_source: u8,
+    pub irq_source: u8,
+    pub gsi: u32,
+    pub flags: u16,
 }
 #[derive(Debug, Clone, Copy)]
 #[repr(C, packed)]
@@ -96,6 +96,35 @@ pub(super) enum MadtEntry {
     X2Apic(X2Apic),
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+pub(super) struct HpetEntry {
+    pub(super) hardware_rev_id: u8,
+    bits: u8,
+    pub(super) pci_vendor_id: u16,
+    // 0 - system memory, 1 - system I/O
+    pub(super) address_space_id: u8,
+    pub(super) register_bit_width: u8,
+    pub(super) register_bit_offset: u8,
+    reserved: u8,
+    pub(super) address: u64,
+    pub(super) hpet_number: u8,
+    pub(super) minimum_tick: u16,
+    pub(super) page_protection: u8,
+}
+
+impl HpetEntry {
+    pub(super) fn comparator_count(&self) -> u8 {
+        self.bits & 0x1f
+    }
+    pub(super) fn counter_size(&self) -> bool {
+        self.bits & (1 << 5) != 0
+    }
+    pub(super) fn legacy_replacement(&self) -> bool {
+        self.bits & (1 << 7) != 0
+    }
+}
+
 macro_rules! madt_type {
     ($mt: ident, $addr: ident, $cur_len: ident) => {
         Some(MadtEntry::$mt(unsafe {
@@ -108,7 +137,7 @@ macro_rules! madt_type {
 pub(super) struct RsdtEntries(Vec<u32>);
 
 impl RsdtEntries {
-    pub(super) fn find_madt(&self) -> Option<AcpiSdt> {
+    fn find(&self, signature: &[u8]) -> Option<AcpiSdt> {
         self.0
             .iter()
             .map(|addr| unsafe {
@@ -119,9 +148,22 @@ impl RsdtEntries {
             })
             .find(|addr| {
                 let table = unsafe { &**addr };
-                &table.signature == b"APIC"
+                &table.signature == signature
             })
             .and_then(AcpiSdt::new)
+    }
+
+    pub(super) fn find_madt(&self) -> Option<Vec<MadtEntry>> {
+        self.find(b"APIC").map(|a| {
+            let AcpiSdtType::Madt { entries, .. } = a.fields else {
+                unreachable!()
+            };
+            entries
+        })
+    }
+
+    pub(super) fn find_hpet(&self) -> Option<AcpiSdt> {
+        self.find(b"HPET")
     }
 }
 
@@ -134,6 +176,7 @@ pub(super) enum AcpiSdtType {
         flags: u32,
         entries: Vec<MadtEntry>,
     },
+    Hpet(HpetEntry),
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +205,7 @@ impl AcpiSdt {
                 AcpiSdtType::Rsdt(RsdtEntries(fields))
             }
             b"APIC" => {
+                crate::println!("MADT address: {:#x?}", addr);
                 let lapic =
                     unsafe { (addr.byte_add(header_length) as *const u32).read_unaligned() };
                 let flags =
@@ -200,6 +244,10 @@ impl AcpiSdt {
                     entries,
                 }
             }
+            b"HPET" => {
+                let hpet = unsafe { *(addr.byte_add(header_length) as *const HpetEntry) };
+                AcpiSdtType::Hpet(hpet)
+            }
             o => {
                 crate::println!(
                     "Unsupported ACPI System Table: {} @ {:x}",
@@ -214,7 +262,7 @@ impl AcpiSdt {
     }
 }
 
-pub(super) fn find_rsdt() -> Option<AcpiSdt> {
+pub(super) fn find_rsdt() -> Option<RsdtEntries> {
     // version 2 is not supported as of yet
     find_rsdp()
         .and_then(|rsdp| {
@@ -226,7 +274,14 @@ pub(super) fn find_rsdt() -> Option<AcpiSdt> {
             };
             AcpiSdt::new(rsdt_addr)
         })
-        .filter(|a| matches!(a.fields, AcpiSdtType::Rsdt(_)))
+        // .filter(|a| matches!(a.fields, AcpiSdtType::Rsdt(_)));
+        .and_then(|a| {
+            if let AcpiSdtType::Rsdt(rsdt) = a.fields {
+                Some(rsdt)
+            } else {
+                None
+            }
+        })
 }
 
 fn find_rsdp() -> Option<&'static Rsdp> {

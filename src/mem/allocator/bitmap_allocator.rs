@@ -193,7 +193,6 @@ impl BitMap {
         let mut bitmap = Self {
             inner,
             // last_used_index: 0,
-
             reserved_ram_frames: 0,
             used_ram_frames: 0,
             ram_frames,

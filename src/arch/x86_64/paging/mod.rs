@@ -1,18 +1,19 @@
 pub mod entry;
-mod mmio;
+pub(crate) mod mmio;
 mod mtrr;
 mod page;
 mod pat;
 mod table;
-
-pub(super) use mmio::Mmio;
 
 use entry::EntryFlags;
 use log::{info, trace};
 pub use table::{ActiveP4Table, P4Table};
 
 use crate::{
-    arch::x86_64::{paging::pat::{read_pat_msr, write_pat_msr, MemoryType}, rdmsr, wrmsr},
+    arch::x86_64::{
+        paging::pat::{read_pat_msr, write_pat_msr, MemoryType},
+        rdmsr, wrmsr,
+    },
     locks::SpinLock,
     mem::{align_down, align_up, frame::Frame, PhysicalAddress, VirtualAddress, PAGE_SIZE},
     multiboot::{MemMapEntryType, MultibootInfo},
@@ -37,8 +38,10 @@ pub(super) fn init(multiboot_info: &MultibootInfo) {
             info!("MTRR Fixed reg for VGA: {:#x?}", mt);
             // unsafe { mtrr::write_fixed_range_mtrr(vga_start, mtrr::MemoryType::WriteCombining)};
             let mt = mtrr::MemoryTypes([mtrr::MemoryType::WriteCombining; 8]);
-            unsafe { wrmsr(0x259, mt.into())}
-            info!("changed MTRR Fixed reg for VGA to: {:#x?}", unsafe { rdmsr(0x259)});
+            unsafe { wrmsr(0x259, mt.into()) }
+            info!("changed MTRR Fixed reg for VGA to: {:#x?}", unsafe {
+                rdmsr(0x259)
+            });
         }
     }
 
@@ -112,9 +115,7 @@ pub(super) fn init(multiboot_info: &MultibootInfo) {
         new_page_table.map_4KiB(
             virt_addr,
             phys_addr,
-            EntryFlags::PRESENT
-                | EntryFlags::WRITABLE
-                | EntryFlags::WRITE_THROUGH
+            EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::WRITE_THROUGH,
         );
     }
 
@@ -136,8 +137,7 @@ pub(super) fn init(multiboot_info: &MultibootInfo) {
     }
 
     let mut guard = ACTIVE_PAGETABLE.lock();
-    let a = guard.switch(new_page_table);
-    drop(guard);
+    guard.switch(new_page_table);
 }
 
 pub fn translate_using_current_page_table(virt_addr: VirtualAddress) -> Option<PhysicalAddress> {

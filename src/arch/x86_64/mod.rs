@@ -6,7 +6,11 @@ mod pci;
 mod pic;
 mod port;
 mod smp;
+mod timers;
 mod vga_buffer;
+
+use log::info;
+use crate::multiboot::MultibootInfo;
 
 pub(crate) use interrupts::{disable_interrupts, enable_interrupts, is_int_enabled};
 pub(crate) use paging::{
@@ -15,24 +19,20 @@ pub(crate) use paging::{
 };
 pub(crate) use vga_buffer::_print;
 
-use crate::multiboot::MultibootInfo;
-
 pub(crate) fn init(multiboot_info: &MultibootInfo) {
     paging::init(multiboot_info);
     interrupts::init();
     pic::init();
     pci::init();
 
-    let rsdt = acpi::find_rsdt();
-    let acpi::AcpiSdtType::Rsdt(rsdt) = rsdt.unwrap().fields else {
-        unreachable!()
-    };
-    crate::println!("found rsdt: {:x?}", rsdt);
-    let madt = rsdt.find_madt().unwrap();
-    crate::println!("found madt: {:x?}", madt.fields);
+    let rsdt = acpi::find_rsdt().unwrap();
+    let madt_entries = rsdt.find_madt().unwrap();
+    info!("found madt: {:x?}", madt_entries);
 
-    apic::init_lapic();
-    smp::init_ap(&madt);
+    let hpet = timers::init(&rsdt);
+
+    apic::init(&madt_entries, &hpet);
+    smp::init_ap(&madt_entries);
 }
 
 unsafe fn rdmsr(msr: u32) -> u64 {

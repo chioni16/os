@@ -1,7 +1,10 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use crate::{arch::x86_64::{rdmsr, wrmsr}, mem::PhysicalAddress};
+use crate::{
+    arch::x86_64::{rdmsr, wrmsr},
+    mem::PhysicalAddress,
+};
 use core::arch::x86_64::{CpuidResult, __cpuid};
 
 pub(super) fn supports_mtrr() -> bool {
@@ -34,7 +37,7 @@ pub(super) unsafe fn write_mtrr_default_type_reg(def_type: MtrrDefaultType) {
 // and fixed_range_regs are supported and enabled
 pub(super) unsafe fn read_fixed_range_mtrr(addr: PhysicalAddress) -> Option<MemoryType> {
     get_fixed_range_reg_msr(addr).map(|(msr, bit_offset)| {
-        let msr_val = unsafe {rdmsr(msr)};
+        let msr_val = unsafe { rdmsr(msr) };
         let mt = (msr_val >> bit_offset) as u8;
         mt.into()
     })
@@ -48,13 +51,13 @@ pub(super) unsafe fn write_fixed_range_mtrr(addr: PhysicalAddress, mt: MemoryTyp
     let Some((msr, bit_offset)) = get_fixed_range_reg_msr(addr) else {
         panic!("address not covered by fixed range regs");
     };
-    let msr_val = unsafe {rdmsr(msr)};
+    let msr_val = unsafe { rdmsr(msr) };
 
     let mt: u8 = mt.into();
     let mt = (mt as u64) << bit_offset;
 
     let value = (msr_val & (!0xff << bit_offset)) | mt;
-    unsafe {wrmsr(msr, value)};
+    unsafe { wrmsr(msr, value) };
 }
 
 // returns the msr and the starting bit within the msr corresponding to the physical address
