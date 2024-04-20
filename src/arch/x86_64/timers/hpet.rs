@@ -1,9 +1,8 @@
-extern crate alloc;
 use alloc::vec::Vec;
 use log::{info, trace};
 
 use crate::{
-    arch::x86_64::{paging::mmio, acpi::HpetEntry},
+    arch::x86_64::{acpi::HpetEntry, paging::mmio},
     mem::{PhysicalAddress, VirtualAddress},
 };
 
@@ -35,7 +34,6 @@ impl Hpet {
         // map the MMIO regs used by HPET
         // https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/software-developers-hpet-spec-1-0a.pdf
         mmio::map(self.base, self.base.offset(0x3ff));
-
 
         let gen_cap_id = self.read_reg(0x0);
         let period = gen_cap_id >> 32;

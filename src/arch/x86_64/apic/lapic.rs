@@ -50,7 +50,7 @@ impl Lapic {
 
             // intel sdm vol 3 Table 11-1
             mmio::map(base_phys, base_phys.offset(0x3ff));
-            
+
             let mut lapic = Self {
                 // table,
                 base,

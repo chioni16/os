@@ -14,7 +14,7 @@ use super::{EntryFlags, ACTIVE_PAGETABLE};
 //     pub(crate) fn new(start: PhysicalAddress, end: PhysicalAddress) -> Self {
 //         trace!("MMIO mapping...");
 //         let mut guard = ACTIVE_PAGETABLE.lock();
-        
+
 //         assert!(guard.translate(unsafe { start.to_virt().unwrap() } ).is_none());
 
 //         let start = Frame::containing_address(start);
@@ -48,15 +48,17 @@ use super::{EntryFlags, ACTIVE_PAGETABLE};
 //     }
 // }
 
-
 pub(crate) fn map(start: PhysicalAddress, end: PhysicalAddress) {
     trace!("MMIO mapping...");
     let mut guard = ACTIVE_PAGETABLE.lock();
-    
+
     // if there's already a mapping for the address, we are gonna assume that this range has been mapped
     // A fair assumption as this function will be used to map the MMIO devices
     // No two devices will be mapped to address ranges that share the same start physical address
-    if guard.translate(unsafe { start.to_virt().unwrap() } ).is_some() {
+    if guard
+        .translate(unsafe { start.to_virt().unwrap() })
+        .is_some()
+    {
         return;
     }
 

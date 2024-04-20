@@ -1,6 +1,6 @@
 use super::acpi::{self, IoApicIntSourceOverride};
-use crate::mem::PhysicalAddress;
 use crate::arch::x86_64::paging::mmio;
+use crate::mem::PhysicalAddress;
 use log::{info, trace};
 
 pub(super) struct IoApic(acpi::IoApic);
@@ -14,7 +14,7 @@ impl IoApic {
         info!("Initialising IOAPIC {}", self.0.ioaid);
 
         // map MMIO registers
-        // just need to map the IOREGSEL and IOREGWIN registers 
+        // just need to map the IOREGSEL and IOREGWIN registers
         // as all the other "registers" are read from / written to using the above two registers
         let base = PhysicalAddress::new(self.0.ioapic_addr as u64);
         mmio::map(base, base.offset(0x1f));

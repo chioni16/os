@@ -6,7 +6,6 @@ use crate::HIGHER_HALF;
 use core::ptr::addr_of;
 use log::{info, trace};
 
-extern crate alloc;
 use alloc::alloc::GlobalAlloc;
 
 use super::FrameAllocator;

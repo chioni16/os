@@ -1,4 +1,3 @@
-extern crate alloc;
 use alloc::{boxed::Box, collections::VecDeque};
 use core::mem::transmute;
 use lazy_static::lazy_static;

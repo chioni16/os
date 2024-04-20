@@ -1,7 +1,6 @@
 mod ioapic;
 pub(super) mod lapic;
 
-extern crate alloc;
 use alloc::vec::Vec;
 
 use super::{acpi, pic, timers::hpet::Hpet};

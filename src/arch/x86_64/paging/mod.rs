@@ -23,6 +23,7 @@ const _1_GI_B: u64 = 1 * 1024u64.pow(3);
 const _2_MI_B: u64 = 2 * 1024u64.pow(2);
 const _4_KI_B: u64 = 4 * 1024u64.pow(1);
 
+// TODO: having static variables for per core data structures will not work with SMP
 pub static ACTIVE_PAGETABLE: SpinLock<ActiveP4Table> = ActiveP4Table::locked();
 
 pub(super) fn init(multiboot_info: &MultibootInfo) {

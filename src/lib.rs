@@ -10,6 +10,8 @@ mod logging;
 mod mem;
 mod multiboot;
 
+#[macro_use]
+extern crate alloc;
 use core::ptr::addr_of;
 use locks::SpinLock;
 use mem::allocator::bitmap_allocator::BitMapAllocator;

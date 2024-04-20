@@ -1,4 +1,3 @@
-extern crate alloc;
 use alloc::vec::Vec;
 
 use crate::arch::x86_64::{rdmsr, wrmsr};
