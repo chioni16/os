@@ -36,6 +36,7 @@ extern "C" {
     static stack_bottom: u8;
     static stack_top: u8;
     static HIGHER_HALF: u8;
+    static mut gdt64: u8;
 }
 
 // static mut HIGHER_HALF_ADDRESS: u64 = 0x0;

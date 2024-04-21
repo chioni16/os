@@ -162,3 +162,7 @@ pub(super) fn rx_handler() {
         crate::println!("RCR: {:#x}", Port::new(base_addr + 0x44).read::<u32>());
     }
 }
+
+pub(super) fn syscall() {
+    log::info!("SYSCALL handler");
+}

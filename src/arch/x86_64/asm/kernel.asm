@@ -13,6 +13,7 @@ global p4_table
 global p3_table
 global low_p4_table
 global low_p3_table
+global gdt64
 global gdt64_pointer
 
 ; for debugging purposes
@@ -26,7 +27,6 @@ low_stack_bottom: equ  stack_bottom - HIGHER_HALF
 low_p4_table: equ  p4_table - HIGHER_HALF
 low_p3_table: equ  p3_table - HIGHER_HALF
 low_gdt64_pointer: equ  gdt64_pointer - HIGHER_HALF
-low_gdt64_code: equ  gdt64.code - HIGHER_HALF
 low_long_mode_start: equ long_mode_start - HIGHER_HALF
 
 section .text
@@ -44,7 +44,7 @@ start:
 
     lgdt [low_gdt64_pointer]
 
-    jmp low_gdt64_code:low_long_mode_start ; enter long mode
+    jmp gdt64.code:low_long_mode_start ; enter long mode
 
 error:
     mov dword [0xb8000], 0x4f524f45
@@ -62,12 +62,25 @@ stack_bottom:
     resb 64*1024*1024
 stack_top:
 
-
 section .rodata
+; some of the flags set below are ignored in the 64 bit mode
+; base and length of descriptors are not set as they are ignored in 64 bit mode
+align 8
 gdt64:
     dq 0 ; zero entry
 .code: equ $ - gdt64
-    dq (1<<43) | (1<<44) | (1<<47) | (1<<53) ; code segment
+    dq (1 << 40) | (1 << 41) | (1<<43) | (1<<44) | (1<<47) | (1<<53) ; code segment (accessed, readable, executable, non-system segment, present, long mode)
+.data: equ $ - gdt64
+    dq (1 << 40) | (1 << 41) | (1<<44) | (1<<47); data segment (accessed, writable, non-system segment, present)
+.tss: equ $ - gdt64
+    ; leave enough space for TSS entry (16 bytes)
+    ; fill in the correct value in rust code
+    dq 0
+    dq 0
+.udata: equ $ - gdt64
+    dq (1 << 40) | (1 << 41) | (1<<44) | (1<<47) | (3 << 45) ; user data segment (accessed, writable, non-system segment, present, user mode)
+.ucode: equ $ - gdt64
+    dq (1 << 40) | (1 << 41) | (1<<43) | (1<<44) | (1<<47) | (1<<53) | (3 << 45); user code segment (accessed, readable, executable, non-system segment, present, long mode, user mode)
 gdt64_pointer:
     dw $ - gdt64 - 1
     dq gdt64

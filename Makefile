@@ -17,7 +17,7 @@ all: ${bin_dir}/os.iso
 	-netdev user,id=n1,hostfwd=tcp::5555-:22 -device rtl8139,netdev=n1 \
 	-object filter-dump,id=f1,netdev=n1,file=/tmp/dump.pcap \
 	-monitor stdio \
-	-d int \
+	-d int -M smm=off \
 	-no-reboot -no-shutdown \
 	-serial file:/tmp/serial \
 	-s -S

@@ -1,16 +1,19 @@
 mod acpi;
 mod apic;
+mod gdt;
 mod interrupts;
 mod paging;
 mod pci;
 mod pic;
 mod port;
 mod smp;
+mod syscall;
 mod timers;
+mod userspace;
 mod vga_buffer;
 
-use log::info;
 use crate::multiboot::MultibootInfo;
+use log::info;
 
 pub(crate) use interrupts::{disable_interrupts, enable_interrupts, is_int_enabled};
 pub(crate) use paging::{
@@ -20,6 +23,7 @@ pub(crate) use paging::{
 pub(crate) use vga_buffer::_print;
 
 pub(crate) fn init(multiboot_info: &MultibootInfo) {
+    gdt::init();
     paging::init(multiboot_info);
     interrupts::init();
     pic::init();
@@ -33,6 +37,9 @@ pub(crate) fn init(multiboot_info: &MultibootInfo) {
 
     apic::init(&madt_entries, &hpet);
     smp::init_ap(&madt_entries);
+
+    syscall::init();
+    userspace::run_userpace_code();
 }
 
 unsafe fn rdmsr(msr: u32) -> u64 {

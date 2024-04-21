@@ -61,6 +61,37 @@ impl P4Table {
         }
     }
 
+    pub unsafe fn with_kernel_mapped_to_higher_half() -> Self {
+        let new_frame = Self::alloc_page_table();
+        let a = ACTIVE_PAGETABLE.lock().inner.as_ref().unwrap().addr;
+
+        // map the higher half of the P4 page table that contains kernel mappings
+        let half_page_size = (PAGE_SIZE / 2) as usize;
+        let dst = core::slice::from_raw_parts_mut(
+            new_frame
+                .start_address()
+                .to_virt()
+                .unwrap()
+                .as_mut_ptr::<u8>()
+                .byte_add(half_page_size),
+            half_page_size,
+        );
+        let src = core::slice::from_raw_parts(
+            a.to_virt()
+                .unwrap()
+                .as_const_ptr::<u8>()
+                .byte_add(half_page_size),
+            half_page_size,
+        );
+        dst.copy_from_slice(src);
+
+        // the data pointed to by the slices created here is not dropped as the slices don't OWN this data
+
+        Self {
+            addr: new_frame.start_address(),
+        }
+    }
+
     fn is_active(&self) -> bool {
         let guard = ACTIVE_PAGETABLE.lock();
         *self == *guard.as_ref()

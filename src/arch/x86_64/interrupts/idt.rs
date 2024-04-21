@@ -120,11 +120,19 @@ impl InterruptDescriptorTable {
         Self([InterruptDescriptor::missing(); 48])
     }
 
-    pub(super) fn add_handler(&mut self, index: usize, handler: HandlerFn) {
+    pub(super) fn add_handler(
+        &mut self,
+        index: usize,
+        handler: HandlerFn,
+        stack_table: u8,
+        dpl: u8,
+    ) {
+        let stack_table = stack_table & 0b111;
+        let dpl = dpl & 0b11;
         let options = Options {
-            stack_table: 0,
+            stack_table,
             gate_type: GateType::Interrupt,
-            dpl: 0,
+            dpl,
             present: true,
         };
         self.0[index] = InterruptDescriptor::new(handler, options);

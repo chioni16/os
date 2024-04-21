@@ -98,20 +98,23 @@ macro_rules! handler_with_error_code {
     }};
 }
 
+pub(super) const SYSCALL_HANDLER: usize = 0x2e;
+
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
-        idt.add_handler(0x0, handler!(divide_by_zero));
-        idt.add_handler(0x3, handler!(breakpoint));
-        idt.add_handler(0x6, handler!(invalid_opcode));
-        idt.add_handler(0xe, handler_with_error_code!(page_fault));
+        idt.add_handler(0x0, handler!(divide_by_zero), 0, 0);
+        idt.add_handler(0x3, handler!(breakpoint), 0, 0);
+        idt.add_handler(0x6, handler!(invalid_opcode), 0, 0);
+        idt.add_handler(0xe, handler_with_error_code!(page_fault), 0, 0);
 
-        idt.add_handler(0x20, handler!(timer));
-        idt.add_handler(0x21, handler!(keyboard));
+        idt.add_handler(0x20, handler!(timer), 0, 0);
+        idt.add_handler(0x21, handler!(keyboard), 0, 0);
+        idt.add_handler(0x2b, handler!(rx_handler), 0, 0);
 
-        idt.add_handler(0x2b, handler!(rx_handler));
+        idt.add_handler(SYSCALL_HANDLER, handler!(syscall), 0, 3);
 
-        idt.add_handler(0x2f, handler!(hpet));
+        idt.add_handler(0x2f, handler!(hpet), 0, 0);
         idt
     };
 }
