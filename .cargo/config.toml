@@ -1,5 +1,11 @@
 [build]
+# target = "config/os-target.json"
 target = "x86_64-unknown-none"
+rustflags = [
+  "-Cforce-unwind-tables",
+  "-Cforce-frame-pointers=yes"
+]
+
 
 [unstable]
 build-std-features = ["compiler-builtins-mem"]
