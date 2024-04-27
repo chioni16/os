@@ -180,3 +180,13 @@ fn find_best_fit(start: u64, size: u64) -> MapSize {
         );
     }
 }
+
+// SAFETY: paging should be initialised and the cr3 should point to a proper page table
+pub(crate) unsafe fn get_cur_page_table_start() -> PhysicalAddress {
+    let cr3: u64;
+    core::arch::asm!(
+        "mov {cr3}, cr3",
+        cr3 = out(reg) cr3,
+    );
+    PhysicalAddress::new(cr3)
+}

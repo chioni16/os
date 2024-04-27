@@ -6,6 +6,7 @@ mod paging;
 mod pci;
 mod pic;
 mod port;
+mod process;
 mod smp;
 mod syscall;
 mod timers;
@@ -16,10 +17,7 @@ use crate::multiboot::MultibootInfo;
 use log::info;
 
 pub(crate) use interrupts::{disable_interrupts, enable_interrupts, is_int_enabled};
-pub(crate) use paging::{
-    map_rw_using_current_page_table, translate_using_current_page_table,
-    unmap_rw_using_current_page_table, ACTIVE_PAGETABLE,
-};
+pub(crate) use paging::{entry::EntryFlags, get_cur_page_table_start, P4Table, ACTIVE_PAGETABLE};
 pub(crate) use vga_buffer::_print;
 
 pub(crate) fn init(multiboot_info: &MultibootInfo) {
@@ -39,7 +37,8 @@ pub(crate) fn init(multiboot_info: &MultibootInfo) {
     smp::init_ap(&madt_entries);
 
     syscall::init();
-    userspace::run_userpace_code();
+    // userspace::run_userpace_code();
+    process::init();
 }
 
 unsafe fn rdmsr(msr: u32) -> u64 {

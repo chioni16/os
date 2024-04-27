@@ -10,6 +10,9 @@ use crate::{
 use alloc::vec::Vec;
 use core::ptr::addr_of;
 
+const KERNEL_STACK_SIZE: usize = PAGE_SIZE as usize;
+const USER_STACK_SIZE: usize = PAGE_SIZE as usize;
+
 #[naked]
 unsafe extern "C" fn prog() {
     core::arch::asm!(
@@ -45,71 +48,25 @@ unsafe fn jump_to_userspace(code: VirtualAddress, stack_top: VirtualAddress) {
 }
 
 pub(super) fn run_userpace_code() {
-    // create a new page table for the new task
-    let mut task_page_table = unsafe { P4Table::with_kernel_mapped_to_higher_half() };
-
-    // map task code in the page table
-    let (task_code_start, task_code_end) = load_task_code();
-    let us_code_virt_base = VirtualAddress::new(0x400000);
-    map_task_page_table(
-        &mut task_page_table,
-        us_code_virt_base,
-        Frame::range_inclusive(
-            &Frame::containing_address(task_code_start),
-            &Frame::containing_address(task_code_end),
-        ),
-        EntryFlags::USER_ACCESSIBLE | EntryFlags::PRESENT,
-    );
-    // calculate jump address
-    let us_task_code_virt_start = {
-        let task_code_start_frame = Frame::containing_address(task_code_start);
-        let code_start_page_offset =
-            task_code_start.to_inner() - task_code_start_frame.start_address().to_inner();
-        us_code_virt_base.offset(code_start_page_offset)
-    };
-
-    // allocate a kernel stack for the task and map it in the page table
-    let (kernel_stack_bottom, kernel_stack_top) = create_stack(PAGE_SIZE as usize);
-    // TODO: should I map kernel stack in the original kernel page table and then copy it into the new prog page table?
-    let kernel_stack_bottom_virt = unsafe { kernel_stack_bottom.to_virt().unwrap() };
-    map_task_page_table(
-        &mut task_page_table,
-        kernel_stack_bottom_virt,
-        Frame::range_inclusive(
-            &Frame::containing_address(kernel_stack_bottom),
-            &Frame::containing_address(kernel_stack_top),
-        ),
-        EntryFlags::PRESENT | EntryFlags::WRITABLE,
-    );
-
-    // allocate a userspace stack for the task and map it in the page table
-    let (user_stack_bottom, user_stack_top) = create_stack(PAGE_SIZE as usize);
-    let us_stack_virt_base = VirtualAddress::new(0x800000);
-    map_task_page_table(
-        &mut task_page_table,
-        us_stack_virt_base,
-        Frame::range_inclusive(
-            &Frame::containing_address(user_stack_bottom),
-            &Frame::containing_address(user_stack_top),
-        ),
-        EntryFlags::USER_ACCESSIBLE | EntryFlags::PRESENT | EntryFlags::WRITABLE,
-    );
+    let (task_code_start, task_code_end) = load_task_code(prog as *const _);
+    let (task_page_table, us_task_code_virt_start, kernel_stack_top, user_stack_top) =
+        create_task(task_code_start, task_code_end);
 
     let old_page_table = ACTIVE_PAGETABLE.lock().switch(task_page_table);
     update_tss_rsp0(kernel_stack_top);
 
     unsafe {
-        jump_to_userspace(us_task_code_virt_start, us_stack_virt_base);
+        jump_to_userspace(us_task_code_virt_start, user_stack_top);
     }
 
     // TODO: free resources, eg: memory used for stacks, page table
     ACTIVE_PAGETABLE.lock().switch(old_page_table);
 }
 
-fn update_tss_rsp0(rsp0_stack_top: PhysicalAddress) {
+fn update_tss_rsp0(rsp0_stack_top: VirtualAddress) {
     let tss = unsafe { gdt::get_tss_mut() };
 
-    let rsp0_stack_top = unsafe { rsp0_stack_top.to_virt().unwrap().to_inner() };
+    let rsp0_stack_top = rsp0_stack_top.to_inner();
     tss.rsp0_low = rsp0_stack_top as u32;
     tss.rsp0_high = (rsp0_stack_top >> 32) as u32;
 
@@ -138,9 +95,8 @@ unsafe fn free_stack(stack_bottom: *const u8, stack_top: *const u8) {
     drop(stack);
 }
 
-fn load_task_code() -> (PhysicalAddress, PhysicalAddress) {
-    let start =
-        PhysicalAddress::new(prog as *const () as u64 - unsafe { addr_of!(HIGHER_HALF) } as u64);
+fn load_task_code(task: *const ()) -> (PhysicalAddress, PhysicalAddress) {
+    let start = PhysicalAddress::new(task as u64 - unsafe { addr_of!(HIGHER_HALF) } as u64);
     let end = start.offset(PAGE_SIZE);
     (start, end)
 }
@@ -160,4 +116,67 @@ fn map_task_page_table(
             flags_to_set,
         );
     }
+}
+
+fn create_task(
+    task_code_start: PhysicalAddress,
+    task_code_end: PhysicalAddress,
+) -> (P4Table, VirtualAddress, VirtualAddress, VirtualAddress) {
+    // create a new page table for the new task
+    let mut task_page_table = unsafe { P4Table::with_kernel_mapped_to_higher_half() };
+
+    // map task code in the page table
+    let us_code_virt_base = VirtualAddress::new(0x400000);
+    map_task_page_table(
+        &mut task_page_table,
+        us_code_virt_base,
+        Frame::range_inclusive(
+            &Frame::containing_address(task_code_start),
+            &Frame::containing_address(task_code_end),
+        ),
+        EntryFlags::USER_ACCESSIBLE | EntryFlags::PRESENT,
+    );
+    // calculate jump address
+    let us_task_code_virt_start = {
+        let task_code_start_frame = Frame::containing_address(task_code_start);
+        let code_start_page_offset =
+            task_code_start.to_inner() - task_code_start_frame.start_address().to_inner();
+        us_code_virt_base.offset(code_start_page_offset)
+    };
+
+    // allocate a kernel stack for the task and map it in the page table
+    let (kernel_stack_bottom, kernel_stack_top) = create_stack(KERNEL_STACK_SIZE);
+    // TODO: should I map kernel stack in the original kernel page table and then copy it into the new prog page table?
+    let kernel_stack_bottom_virt = unsafe { kernel_stack_bottom.to_virt().unwrap() };
+    map_task_page_table(
+        &mut task_page_table,
+        kernel_stack_bottom_virt,
+        Frame::range_inclusive(
+            &Frame::containing_address(kernel_stack_bottom),
+            &Frame::containing_address(kernel_stack_top),
+        ),
+        EntryFlags::PRESENT | EntryFlags::WRITABLE,
+    );
+    let kernel_stack_top = unsafe { kernel_stack_top.to_virt().unwrap() };
+
+    // allocate a userspace stack for the task and map it in the page table
+    let (user_stack_bottom, user_stack_top) = create_stack(USER_STACK_SIZE);
+    let us_stack_virt_base = VirtualAddress::new(0x800000);
+    map_task_page_table(
+        &mut task_page_table,
+        us_stack_virt_base,
+        Frame::range_inclusive(
+            &Frame::containing_address(user_stack_bottom),
+            &Frame::containing_address(user_stack_top),
+        ),
+        EntryFlags::USER_ACCESSIBLE | EntryFlags::PRESENT | EntryFlags::WRITABLE,
+    );
+    let user_stack_top = us_stack_virt_base.offset(USER_STACK_SIZE as u64);
+
+    (
+        task_page_table,
+        us_task_code_virt_start,
+        kernel_stack_top,
+        user_stack_top,
+    )
 }

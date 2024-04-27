@@ -3,6 +3,7 @@
 #![feature(naked_functions)]
 #![feature(const_option)]
 #![feature(core_intrinsics)]
+#![feature(let_chains)]
 
 mod arch;
 mod locks;

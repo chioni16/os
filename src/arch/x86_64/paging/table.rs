@@ -92,6 +92,12 @@ impl P4Table {
         }
     }
 
+    pub fn forget(self) -> PhysicalAddress {
+        let addr = self.addr;
+        core::mem::forget(self);
+        addr
+    }
+
     fn is_active(&self) -> bool {
         let guard = ACTIVE_PAGETABLE.lock();
         *self == *guard.as_ref()

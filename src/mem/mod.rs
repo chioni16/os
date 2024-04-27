@@ -5,6 +5,7 @@ pub const PAGE_SIZE: u64 = 4096;
 const HIGHER_HALF: u64 = 0xFFFF800000000000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct PhysicalAddress(u64);
 
 impl PhysicalAddress {
@@ -27,6 +28,7 @@ impl PhysicalAddress {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct VirtualAddress(u64);
 
 impl VirtualAddress {
