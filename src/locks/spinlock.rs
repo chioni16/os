@@ -30,6 +30,13 @@ pub struct Guard<'a, T> {
     lock: &'a SpinLock<T>,
 }
 
+impl<'a, T> Guard<'a, T> {
+    pub fn get_val_addr(&self) -> *const T {
+        // works as UnsafeCell uses Transparent representation
+        core::ptr::addr_of!(self.lock.value) as *const _
+    }
+}
+
 impl<T> Deref for Guard<'_, T> {
     type Target = T;
     fn deref(&self) -> &T {

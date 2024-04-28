@@ -66,35 +66,20 @@ pub extern "C" fn rust_start(multiboot_addr: u64) -> ! {
         info!("__ehframe_hdr_end: {:#x?}", addr_of!(__eh_frame_hdr_end));
     }
 
-    // unsafe {
-    //     HIGHER_HALF_ADDRESS = core::ptr::addr_of!(crate::HIGHER_HALF) as u64;
-    //     crate::println!("ptr: {:#x}", HIGHER_HALF_ADDRESS);
-    // }
-
     ACTIVE_PAGETABLE.lock().init();
+
     trace!("multiboot_addr: {:#x}", multiboot_addr);
     let multiboot_info = multiboot::MultibootInfo::new(multiboot_addr);
+
     // HEAP_ALLOCATOR2.lock().init(&multiboot_info);
     HEAP_ALLOCATOR.lock().init(&multiboot_info);
+
     arch::init(&multiboot_info);
     info!("init done");
-
-    // let a: u64 = 0;
-    // unsafe {
-    //     core::arch::asm!("div {}", in(reg) a);
-    // }
-
-    // unsafe { core::arch::asm!("ud2") };
 
     unsafe {
         core::arch::asm!("int 3");
     }
-
-    // unsafe {
-    //     // let _ = core::ptr::read_volatile(0x40000000 as *const u8);
-    //     core::ptr::write_volatile(0x40000000 as *mut u8, 0);
-    // }
-
     println!("Bye!");
 
     loop {

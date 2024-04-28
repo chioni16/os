@@ -8,8 +8,8 @@ mod frame_pointer;
 #[cfg(not(feature = "eh_frame"))]
 pub use frame_pointer::unwind;
 
-use gimli::{Register, X86_64};
 use crate::mem::VirtualAddress;
+use gimli::{Register, X86_64};
 
 #[derive(Debug)]
 pub struct CallFrame {

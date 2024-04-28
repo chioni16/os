@@ -12,7 +12,6 @@ use gimli::{
 
 use super::{CallFrame, RegisterSet, UnwinderError};
 
-
 pub struct EhInfo {
     /// A set of base addresses used for relative addressing.
     base_addrs: BaseAddresses,
@@ -167,8 +166,6 @@ impl Unwinder {
         }))
     }
 }
-
-
 
 pub fn unwind(register_set: RegisterSet) {
     let eh_info = unsafe { EhInfo::new() };
