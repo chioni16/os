@@ -8,4 +8,4 @@ pub(super) fn get_new_pid() -> Pid {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
-pub(super) struct Pid(u32);
+pub(super) struct Pid(pub(super) u32);

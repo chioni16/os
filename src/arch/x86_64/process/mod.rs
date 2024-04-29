@@ -1,122 +1,81 @@
 mod create;
+mod delay;
+mod lock;
 mod pid;
+mod process;
+mod scheduler;
 
-use super::gdt::get_tss;
-use crate::locks::SpinLock;
-use crate::{
-    arch::get_cur_page_table_start,
-    mem::{PhysicalAddress, VirtualAddress},
+use self::{
+    create::create_kernel_task,
+    lock::Lock,
+    pid::{get_new_pid, Pid},
+    process::{Process, State},
+    scheduler::Scheduler,
 };
-use alloc::sync::Arc;
+use crate::{arch::get_cur_page_table_start, mem::VirtualAddress};
 use core::mem::MaybeUninit;
-use create::create_kernel_task;
-use log::{info, trace};
-use pid::*;
+use log::info;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum State {
-    Ready,
-    Running,
-    Waiting,
-}
-
-// needed as we attempt to access the fields from inline assembly (`switch`)
-#[repr(C, packed)]
-#[derive(Debug)]
-pub(crate) struct Process {
-    // the fields accessed by inline assembly are placed at the top (for easy offset calculation lol)
-
-    // virtual address as per page table pointed to by the `cr3` field
-    stack_top: VirtualAddress,
-    // used when privilege levels change from CPL3 to CPL0
-    // stored in the TSS.RSP0 field
-    kernel_stack_top: VirtualAddress,
-    cr3: PhysicalAddress,
-
-    id: Pid,
-    state: State,
-    // scheduling policy
-
-    // statistics
-}
-
-use hashbrown::HashMap;
-
-#[derive(Debug)]
-pub(super) struct Scheduler {
-    // processes: BTreeMap<Pid, Arc<Process>>,
-    // processes: IndexMap<Pid, Arc<Process>>,
-    processes: HashMap<Pid, Arc<SpinLock<Process>>>,
-    cur_proc: Pid,
-}
-
-impl Scheduler {
-    fn new(init: Process) -> Self {
-        let pid = init.id;
-        // let mut processes = BTreeMap::new();
-        let mut processes = HashMap::new();
-        // let mut processes = IndexMap::new();
-        processes.insert(pid, Arc::new(SpinLock::new(init)));
-
-        Self {
-            processes,
-            cur_proc: pid,
-        }
-    }
-
-    fn add(&mut self, proc: Process) {
-        let pid = proc.id;
-        self.processes.insert(pid, Arc::new(SpinLock::new(proc)));
-    }
-
-    #[inline(never)]
-    fn schedule(&mut self) {
-        unsafe {
-            core::arch::asm!("cli");
-        }
-
-        let next_pid = {
-            let mut iter = self.processes.iter();
-            // find stops when it finds the entry (short circuits)
-            let _ = iter.find(|(pid, _)| &self.cur_proc == *pid);
-            iter.filter(|(_, task)| task.lock().state == State::Ready)
-                .next()
-                .or(self.processes.iter().next()) // TODO: wraparound
-        };
-        if let Some((next_pid, _)) = next_pid
-            && *next_pid != self.cur_proc
-        {
-            trace!("changing {:x?} --> {:x?}", self.cur_proc, next_pid);
-            let new_task = self.processes.get(next_pid).unwrap();
-            let old_task = self.processes.get(&self.cur_proc).unwrap();
-            new_task.lock().state = State::Running;
-            old_task.lock().state = State::Ready;
-
-            self.cur_proc = new_task.lock().id;
-
-            // let new_task = Arc::as_ptr(new_task) as u64;
-            // let old_task = Arc::as_ptr(old_task) as u64;
-            let new_task = new_task.lock().get_val_addr() as u64;
-            let old_task = old_task.lock().get_val_addr() as u64;
-            unsafe {
-                core::arch::asm!(
-                    "call task_switch",
-                    in("rdi") old_task,
-                    in("rsi") new_task,
-                    in("rdx") get_tss() as *const _ as u64,
-                    clobber_abi("C")
-                );
-            }
-        }
-    }
-}
-
+static SCHEDULER_LOCK: Lock = Lock::new();
 static mut SCHEDULER: MaybeUninit<Scheduler> = MaybeUninit::uninit();
 
 #[no_mangle]
-fn schedule() {
+pub(super) fn schedule() {
     let scheduler = unsafe { SCHEDULER.assume_init_mut() };
-    scheduler.schedule();
+
+    SCHEDULER_LOCK.lock();
+    // SAFETY: locking disables interrupts
+    unsafe {
+        scheduler.schedule();
+    }
+    // SAFETY: SCHEDULER_LOCK is locked just above
+    unsafe {
+        SCHEDULER_LOCK.unlock();
+    }
+}
+
+#[no_mangle]
+fn block() {
+    let scheduler = unsafe { SCHEDULER.assume_init_mut() };
+
+    SCHEDULER_LOCK.lock();
+
+    // info!("scheduler: {:#x?}", scheduler);
+    let task = scheduler.processes.get(&scheduler.cur_proc).unwrap();
+    task.lock().state = State::Waiting;
+    scheduler.ready_to_run -= 1;
+
+    // SAFETY: locking disables interrupts
+    unsafe {
+        scheduler.schedule();
+    }
+    // SAFETY: SCHEDULER_LOCK is locked just above
+    unsafe {
+        SCHEDULER_LOCK.unlock();
+    }
+}
+
+#[no_mangle]
+fn unblock(pid: u64) {
+    let pid = Pid(pid as u32);
+
+    let scheduler = unsafe { SCHEDULER.assume_init_mut() };
+
+    SCHEDULER_LOCK.lock();
+
+    // info!("scheduler: {:#x?}", scheduler);
+    let task = scheduler.processes.get(&pid).unwrap();
+    task.lock().state = State::Ready;
+    scheduler.ready_to_run += 1;
+
+    // SAFETY: locking disables interrupts
+    unsafe {
+        scheduler.schedule();
+    }
+    // SAFETY: SCHEDULER_LOCK is locked just above
+    unsafe {
+        SCHEDULER_LOCK.unlock();
+    }
 }
 
 pub(super) fn init() {
@@ -148,6 +107,8 @@ pub(super) fn init() {
     scheduler.add(p1);
     scheduler.add(p2);
     info!("Scheduler alloc stopped");
+
+    info!("scheduler: {:#x?}", scheduler);
 
     unsafe {
         SCHEDULER.write(scheduler);
@@ -221,9 +182,11 @@ extern "C" fn func1() {
             "mov r8, 0",
             "4:",
             "add r8, 1",
-            "cmp r8, 1000000",
+            "cmp r8, 100000000",
             "jl 4b",
-            "call schedule",
+            // "call schedule",
+            "mov rdi, 2",
+            "call unblock",
             "jmp 3b",
             options(noreturn),
         );
@@ -240,9 +203,10 @@ extern "C" fn func2() {
             "mov r8, 0",
             "6:",
             "add r8, 1",
-            "cmp r8, 1000000",
+            "cmp r8, 100000000",
             "jl 6b",
-            "call schedule",
+            // "call schedule",
+            "call block",
             "jmp 5b",
             options(noreturn),
         );

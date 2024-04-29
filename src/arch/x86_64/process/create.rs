@@ -1,4 +1,8 @@
-use super::{pid::*, Process, State};
+use super::{
+    pid::*,
+    process::{Process, State},
+    SCHEDULER_LOCK,
+};
 use crate::{
     arch::{EntryFlags, P4Table},
     mem::{frame::Frame, PhysicalAddress, VirtualAddress, PAGE_SIZE},
@@ -17,6 +21,12 @@ fn task_init() {
     // which transfers control to the user defined task function
     // This is possible due to the stack structure
     // `task_init` address is placed directly above the address of the user defined task function
+
+    // SAFETY: the only way to get here is when `task_switch` transfers control to this new task
+    // `SCHEDULER_LOCK` is locked before `task_switch` is run and is not unlocked before next statement
+    unsafe {
+        SCHEDULER_LOCK.unlock();
+    }
 }
 
 // returns stack top and stack bottom
@@ -36,8 +46,8 @@ fn create_stack(
             stack_top = stack_top.byte_sub(32);
             core::ptr::write(stack_top as *mut u64, task_code.to_inner());
 
-            // stack_top = stack_top.byte_sub(8);
-            // core::ptr::write(stack_top as *mut u64, task_init as *const () as u64);
+            stack_top = stack_top.byte_sub(8);
+            core::ptr::write(stack_top as *mut u64, task_init as *const () as u64);
 
             // matching the initial stack with what the `task_switch` expects to see
             stack_top = stack_top.byte_sub(6 * 8);

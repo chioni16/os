@@ -127,6 +127,8 @@ pub(super) extern "C" fn timer(_isf: &InterruptStackFrame) {
         crate::print!(".");
         // pic::send_eoi(0);
         apic::send_eoi();
+
+        crate::arch::x86_64::process::schedule();
     });
 }
 pub(super) extern "C" fn hpet(_isf: &InterruptStackFrame) {
