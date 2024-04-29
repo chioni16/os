@@ -126,9 +126,12 @@ pub(super) extern "C" fn timer(_isf: &InterruptStackFrame) {
     without_interrupts(|| unsafe {
         crate::print!(".");
         // pic::send_eoi(0);
-        apic::send_eoi();
+        // apic::send_eoi();
 
-        crate::arch::x86_64::process::schedule();
+        // currently, EOI is sent from within the scheduler
+        // as the only functionality that is invoked when there is an interrupt, is scheduler, this works fine
+        // WARNING: need to change the place where EOI is called, if the above statement is no longer true
+        crate::arch::x86_64::process::timer_interrupt_handler();
     });
 }
 pub(super) extern "C" fn hpet(_isf: &InterruptStackFrame) {

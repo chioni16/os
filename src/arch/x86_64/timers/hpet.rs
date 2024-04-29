@@ -42,7 +42,7 @@ impl Hpet {
         trace!("HPET frequency: {}", self.frequency());
 
         // initialise counter
-        self.write_main_counter(23);
+        self.write_main_counter(0);
         info!("HPET main counter set to {}", self.read_main_counter());
 
         // initialise each comparator individually
@@ -90,6 +90,11 @@ impl Hpet {
     #[inline]
     pub(in super::super) fn ns_to_counter(&self, ns: u64) -> u64 {
         (ns * self.frequency()) / 10u64.pow(9)
+    }
+
+    #[inline]
+    fn counter_to_ns(&self, counter: u64) -> u64 {
+        (counter * 10u64.pow(9)) / self.frequency()
     }
 
     #[inline]
@@ -169,5 +174,10 @@ impl Hpet {
         let comp_offset = self.timer_comparator_val_reg_offset(n);
         self.write_reg(comp_offset, self.read_main_counter() + counter);
         self.write_reg(comp_offset, counter);
+    }
+
+    pub(in super::super) fn time_since_boot_in_ns(&self) -> u64 {
+        let counter = self.read_main_counter();
+        self.counter_to_ns(counter)
     }
 }

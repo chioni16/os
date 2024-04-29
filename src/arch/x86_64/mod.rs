@@ -14,6 +14,7 @@ mod userspace;
 mod vga_buffer;
 
 use crate::multiboot::MultibootInfo;
+use alloc::sync::Arc;
 use log::info;
 
 pub(crate) use interrupts::{disable_interrupts, enable_interrupts, is_int_enabled};
@@ -38,7 +39,7 @@ pub(crate) fn init(multiboot_info: &MultibootInfo) {
 
     syscall::init();
     // userspace::run_userpace_code();
-    process::init();
+    process::init(Arc::new(hpet));
 }
 
 unsafe fn rdmsr(msr: u32) -> u64 {

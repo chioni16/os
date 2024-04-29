@@ -12,7 +12,9 @@ use self::{
     process::{Process, State},
     scheduler::Scheduler,
 };
+use super::{apic, timers::hpet::Hpet};
 use crate::{arch::get_cur_page_table_start, mem::VirtualAddress};
+use alloc::sync::Arc;
 use core::mem::MaybeUninit;
 use log::info;
 
@@ -20,7 +22,7 @@ static SCHEDULER_LOCK: Lock = Lock::new();
 static mut SCHEDULER: MaybeUninit<Scheduler> = MaybeUninit::uninit();
 
 #[no_mangle]
-pub(super) fn schedule() {
+fn schedule() {
     let scheduler = unsafe { SCHEDULER.assume_init_mut() };
 
     SCHEDULER_LOCK.lock();
@@ -35,15 +37,13 @@ pub(super) fn schedule() {
 }
 
 #[no_mangle]
-fn block() {
+fn delay(delay_ns: u64) {
     let scheduler = unsafe { SCHEDULER.assume_init_mut() };
 
     SCHEDULER_LOCK.lock();
 
-    // info!("scheduler: {:#x?}", scheduler);
-    let task = scheduler.processes.get(&scheduler.cur_proc).unwrap();
-    task.lock().state = State::Waiting;
-    scheduler.ready_to_run -= 1;
+    scheduler.block_current();
+    scheduler.delays.add(scheduler.cur_proc, delay_ns);
 
     // SAFETY: locking disables interrupts
     unsafe {
@@ -64,9 +64,7 @@ fn unblock(pid: u64) {
     SCHEDULER_LOCK.lock();
 
     // info!("scheduler: {:#x?}", scheduler);
-    let task = scheduler.processes.get(&pid).unwrap();
-    task.lock().state = State::Ready;
-    scheduler.ready_to_run += 1;
+    scheduler.unblock(pid);
 
     // SAFETY: locking disables interrupts
     unsafe {
@@ -78,7 +76,35 @@ fn unblock(pid: u64) {
     }
 }
 
-pub(super) fn init() {
+pub(super) fn timer_interrupt_handler() {
+    let scheduler = unsafe { SCHEDULER.assume_init_mut() };
+
+    SCHEDULER_LOCK.lock();
+
+    // SAFETY: ensures that the EOI is sent to LAPIC
+    // the goal is to send EOI once the interrupts are disabled
+    // why is that necessary? I am not sure. I just felt that it's better if I do it once the interrupts are disabled
+    // if something goes wrong, you know whom to blame ;)
+    unsafe {
+        apic::send_eoi();
+    }
+
+    for pid in scheduler.delays.get_expired_timers() {
+        scheduler.unblock(pid);
+    }
+
+    // SAFETY: locking disables interrupts
+    unsafe {
+        scheduler.schedule();
+    }
+
+    // SAFETY: SCHEDULER_LOCK is locked just above
+    unsafe {
+        SCHEDULER_LOCK.unlock();
+    }
+}
+
+pub(super) fn init(hpet: Arc<Hpet>) {
     let mut init = Process {
         id: get_new_pid(),
         // SAFETY: paging enabled by the time we get here
@@ -97,13 +123,16 @@ pub(super) fn init() {
         VirtualAddress::new(stack_top)
     };
 
+    let p0 = create_kernel_task(func0 as _);
+    info!("p0: {:#x?}", p0);
     let p1 = create_kernel_task(func1 as _);
     info!("p1: {:#x?}", p1);
     let p2 = create_kernel_task(func2 as _);
     info!("p2: {:#x?}", p2);
 
     info!("Scheduler alloc started");
-    let mut scheduler = Scheduler::new(init);
+    let mut scheduler = Scheduler::new(init, hpet);
+    scheduler.add(p0);
     scheduler.add(p1);
     scheduler.add(p2);
     info!("Scheduler alloc stopped");
@@ -173,6 +202,23 @@ unsafe extern "sysv64" fn task_switch() {
 }
 
 #[naked]
+extern "C" fn func0() {
+    unsafe {
+        core::arch::asm!(
+            "3:",
+            "mov r8, 0xffff8000000b8000",
+            "mov byte ptr [r8], 0x30",
+            "mov r8, 0",
+            "4:",
+            "add r8, 1",
+            "cmp r8, 100000000",
+            "jl 4b",
+            "jmp 3b",
+            options(noreturn),
+        );
+    }
+}
+#[naked]
 extern "C" fn func1() {
     unsafe {
         core::arch::asm!(
@@ -185,8 +231,10 @@ extern "C" fn func1() {
             "cmp r8, 100000000",
             "jl 4b",
             // "call schedule",
-            "mov rdi, 2",
-            "call unblock",
+            // "mov rdi, 2",
+            // "call unblock",
+            "mov rdi, 1000000000",
+            "call delay",
             "jmp 3b",
             options(noreturn),
         );
@@ -206,7 +254,9 @@ extern "C" fn func2() {
             "cmp r8, 100000000",
             "jl 6b",
             // "call schedule",
-            "call block",
+            // "call block",
+            "mov rdi, 2000000000",
+            "call delay",
             "jmp 5b",
             options(noreturn),
         );

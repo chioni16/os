@@ -4,7 +4,10 @@ use crate::{
     arch::x86_64::{paging::mmio, rdmsr, timers::hpet::Hpet, wrmsr},
     mem::{PhysicalAddress, VirtualAddress},
 };
-use core::arch::x86_64::CpuidResult;
+use core::{
+    arch::x86_64::CpuidResult,
+    sync::atomic::{AtomicU64, AtomicU8, Ordering},
+};
 
 pub const MSR_APIC_REG_BASE: u32 = 0x1b;
 pub const APIC_ENABLE: u64 = 1 << 11;
@@ -12,18 +15,26 @@ pub const LAPIC_BASE_ADDR_MASK: u64 = !0b1111_1111_1111;
 
 pub(super) const LAPIC_PRESENT: u32 = 1 << 9;
 
+// WARNING: Assuming that APIC timers on all LAPICs have same frequency
+static APIC_TIMER_FREQ: AtomicU64 = AtomicU64::new(0);
+static APIC_TIMER_DIVIDER: AtomicU8 = AtomicU8::new(0);
+
 #[derive(Debug)]
-pub(super) struct Lapic {
+pub(in super::super) struct Lapic {
     // table: acpi::LocalApic,
     base: VirtualAddress,
+    // timer_freq_considering_divider: Option<u32>,
 }
 
 // SAFETY: only to be called once the Local APIC is initialised
-unsafe fn get_lapic() -> Lapic {
+pub(in super::super) unsafe fn get_lapic() -> Lapic {
     let msr_apic_reg_base = rdmsr(MSR_APIC_REG_BASE);
     let base_phys = PhysicalAddress::new(msr_apic_reg_base & LAPIC_BASE_ADDR_MASK);
     let base = base_phys.to_virt().unwrap();
-    Lapic { base }
+    Lapic {
+        base,
+        // timer_freq_considering_divider: None
+    }
 }
 
 // SAFETY: only to be called once the Local APIC is initialised
@@ -54,6 +65,7 @@ impl Lapic {
             let mut lapic = Self {
                 // table,
                 base,
+                // timer_freq_considering_divider: None,
             };
 
             // set Task Priority Register to 0 so that it allows all external interrupts
@@ -104,10 +116,11 @@ impl Lapic {
         self.mask_timer_interrupts(true);
 
         // start HPET for calibration
-        let counter = hpet.ns_to_counter(10u64.pow(9));
         hpet.write_main_counter(0);
+        // 1 sec
+        let counter = hpet.ns_to_counter(10u64.pow(9));
 
-        // initial count
+        // APIC timer initial count
         self.set_timer_initial_count(u32::MAX);
 
         // wait till you get the HPET interrupt
@@ -115,26 +128,40 @@ impl Lapic {
             core::hint::spin_loop();
         }
 
-        // TODO: The method assumes that there were no wrap arounds in the Apic timer
+        // WARNING: The method assumes that there were no wrap arounds in the Apic timer
         // during this time.
-        // For this to be true, try to keep the divisor value hight (64 / 128) for calibration
+        // For this to be true, try to keep the divisor value high (64 / 128) for calibration
 
         // calculate APIC timer ticks during this time
-        let ticks_occurred = u32::MAX - self.get_timer_current_count();
+        let ticks_occurred_in_1_sec = u32::MAX - self.get_timer_current_count();
         trace!(
             "APIC timer frequency {} for divider {}",
-            ticks_occurred,
+            ticks_occurred_in_1_sec,
             divider
         );
 
-        // TODO: calculate frequency and store it for further use
+        // calculate frequency and store it for further use
+        let new_divider = 64;
+        APIC_TIMER_FREQ.store(
+            ticks_occurred_in_1_sec as u64 * divider as u64,
+            Ordering::Relaxed,
+        );
+        self.set_timer_divider(new_divider);
+        APIC_TIMER_DIVIDER.store(new_divider, Ordering::Relaxed);
 
-        // unset interrupt mask, set mode to periodic, set interrupt to 32 (IRQ0)
-        self.set_timer_divider(divider);
+        // // cast to u64 to avoid overflows when calculating
+        // let net_freq = (ticks_occurred_in_1_sec as u64 * divider as u64) / new_divider as u64;
+        // self.timer_freq_considering_divider = Some(net_freq as u32);
+
+        // unset interrupt mask, set mode to oneshot, set interrupt to 32 (IRQ0)
         self.set_timer_interrupt_vector(32); // IRQ0
-        self.set_timer_mode(ApicTimerMode::Periodic);
+        self.set_timer_mode(ApicTimerMode::Oneshot);
+
+        // self.set_timer_initial_count(2 * ticks_occurred_in_1_sec);
+        // self.set_timer_initial_count_in_ns(2 * 10u32.pow(9));
+        self.set_timer_initial_count_in_ns(0);
+
         self.mask_timer_interrupts(false);
-        self.set_timer_initial_count(2 * ticks_occurred);
     }
 
     #[inline]
@@ -194,6 +221,15 @@ impl Lapic {
     #[inline]
     fn get_timer_current_count(&self) -> u32 {
         self.read_reg(Self::CURRENT_COUNT)
+    }
+
+    pub(in super::super) fn set_timer_initial_count_in_ns(&self, ns: u32) {
+        // cast to u64 to avoid overflow while calculating
+        let timer_freq_considering_divider = APIC_TIMER_FREQ.load(Ordering::Relaxed)
+            / APIC_TIMER_DIVIDER.load(Ordering::Relaxed) as u64;
+        let init_count = (timer_freq_considering_divider * ns as u64) / 10u64.pow(9);
+        assert!(init_count < u32::MAX as u64);
+        self.set_timer_initial_count(init_count as u32);
     }
 }
 
