@@ -169,5 +169,12 @@ pub(super) fn rx_handler() {
 }
 
 pub(super) fn syscall() {
-    log::info!("SYSCALL handler");
+    let task: u64;
+    unsafe {
+        core::arch::asm!(
+            "mov {task}, r11",
+            task = out(reg) task,
+        );
+    }
+    log::info!("SYSCALL handler: {:#x}", task);
 }

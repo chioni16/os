@@ -4,18 +4,35 @@ use super::{
     SCHEDULER_LOCK,
 };
 use crate::{
-    arch::{EntryFlags, P4Table},
+    arch::{x86_64::gdt, EntryFlags, P4Table},
     mem::{frame::Frame, PhysicalAddress, VirtualAddress, PAGE_SIZE},
     HIGHER_HALF,
 };
 use alloc::vec::Vec;
 use core::ptr::addr_of;
+use log::info;
 
 const KERNEL_STACK_SIZE: usize = PAGE_SIZE as usize;
 const USER_STACK_SIZE: usize = PAGE_SIZE as usize;
 
+// naked function as a normal function allocates stack space during prologue
+// as a result, the stack top doesn't exactly match up with the expected structure if a normal function is used
+#[naked]
+extern "C" fn user_task_init() {
+    unsafe {
+        core::arch::asm!(
+            // SAFETY: the only way to get here is when `task_switch` transfers control to this new task
+            // `SCHEDULER_LOCK` is locked before `task_switch` is run and is not unlocked before next statement
+            "call scheduler_unlock",
+            // jump to userspace
+            "iretq",
+            options(noreturn)
+        );
+    }
+}
+
 // TODO: should this be a naked function?
-fn task_init() {
+extern "C" fn kernel_task_init() {
     // TODO: add initialisation steps
     // for now, just returns
     // which transfers control to the user defined task function
@@ -33,7 +50,7 @@ fn task_init() {
 // can calculate one if you know the other and stack size requested
 fn create_stack(
     size: usize,
-    task_code: Option<VirtualAddress>,
+    task_code: Option<(VirtualAddress, VirtualAddress, bool)>, // (code start, stack top, is_user_task)
 ) -> (PhysicalAddress, PhysicalAddress) {
     let stack = vec![0u8; size];
     let stack_bottom = stack.as_ptr();
@@ -41,16 +58,69 @@ fn create_stack(
     // 16 byte align
     stack_top = (stack_top as u64 & !0xf) as *const u8;
 
-    if let Some(task_code) = task_code {
+    if let Some((task_code_start, task_stack_top, is_user_task)) = task_code {
         unsafe {
             stack_top = stack_top.byte_sub(32);
-            core::ptr::write(stack_top as *mut u64, task_code.to_inner());
+
+            if is_user_task {
+                info!("[user task] creating user task");
+                // prepare to jump to userspace
+                // add things to stack that `iretq` expects
+
+                // stack segment offset in GDT
+                let ds = gdt::get_user_data_segment_selector() as u64;
+                core::ptr::write(stack_top as *mut u64, ds);
+                info!("[user task] ds: {:#x} @ {:#x?}", ds, stack_top);
+                stack_top = stack_top.byte_sub(8);
+
+                // stack top
+                // rsp value should belong to the user program's page table (not a higher half address)
+                // 16 byte aligned
+                // subtract 16 bytes to ensure that we are in the paged memory and not on the border address that is not mapped
+                let user_task_stack_top = task_stack_top.to_inner() & !0xf - 16;
+                core::ptr::write(stack_top as *mut u64, user_task_stack_top);
+                info!(
+                    "[user task] stack top: {:#x} @ {:#x?}",
+                    user_task_stack_top, stack_top
+                );
+                stack_top = stack_top.byte_sub(8);
+
+                // rflags (only interrupt bit set)
+                let rflags = 0x200;
+                core::ptr::write(stack_top as *mut u64, rflags);
+                info!("[user task] rflags: {:#x} @ {:#x?}", rflags, stack_top);
+                stack_top = stack_top.byte_sub(8);
+
+                // code segment offset in GDT
+                let cs = gdt::get_user_code_segment_selector() as u64;
+                core::ptr::write(stack_top as *mut u64, cs);
+                info!("[user task] cs: {:#x} @ {:#x?}", cs, stack_top);
+                stack_top = stack_top.byte_sub(8);
+
+                info!(
+                    "[user task] code start: {:#x} @ {:#x?}",
+                    task_code_start.to_inner(),
+                    stack_top
+                );
+                info!("[use task] end creating user task");
+            }
+
+            core::ptr::write(stack_top as *mut u64, task_code_start.to_inner());
 
             stack_top = stack_top.byte_sub(8);
+            let task_init = if is_user_task {
+                user_task_init
+            } else {
+                kernel_task_init
+            };
             core::ptr::write(stack_top as *mut u64, task_init as *const () as u64);
 
             // matching the initial stack with what the `task_switch` expects to see
-            stack_top = stack_top.byte_sub(6 * 8);
+            // callee saved registers - rbp, rbx, r12, r13, r14, r15
+            for _ in 0..6 {
+                stack_top = stack_top.byte_sub(8);
+                core::ptr::write(stack_top as *mut u64, 0);
+            }
         }
     }
 
@@ -94,7 +164,7 @@ fn map_task_page_table(
 }
 
 // fn create_task(task: *const ()) -> (P4Table, VirtualAddress, VirtualAddress, VirtualAddress) {
-pub(super) fn create_task(task: *const ()) -> Process {
+pub(super) fn create_user_task(task: *const ()) -> Process {
     let (task_code_start, task_code_end) = load_task_code(task);
 
     // create a new page table for the new task
@@ -136,9 +206,15 @@ pub(super) fn create_task(task: *const ()) -> Process {
     let kernel_stack_top = unsafe { kernel_stack_top.to_virt().unwrap() };
 
     // allocate a userspace stack for the task and map it in the page table
-    let (user_stack_bottom, user_stack_top) =
-        create_stack(USER_STACK_SIZE, Some(us_task_code_virt_start));
     let us_stack_virt_base = VirtualAddress::new(0x800000);
+    let (user_stack_bottom, user_stack_top) = create_stack(
+        USER_STACK_SIZE,
+        Some((
+            us_task_code_virt_start,
+            us_stack_virt_base.offset(USER_STACK_SIZE as u64),
+            true,
+        )),
+    );
     map_task_page_table(
         &mut task_page_table,
         us_stack_virt_base,
@@ -179,7 +255,10 @@ pub(super) fn create_kernel_task(task: *const ()) -> Process {
     let (_, kernel_stack_top) = create_stack(KERNEL_STACK_SIZE, None);
     let kernel_stack_top = unsafe { kernel_stack_top.to_virt().unwrap() };
 
-    let (_, user_stack_top) = create_stack(USER_STACK_SIZE, Some(task_code_start));
+    let (_, user_stack_top) = create_stack(
+        USER_STACK_SIZE,
+        Some((task_code_start, kernel_stack_top, false)),
+    );
     let user_stack_top = unsafe { user_stack_top.to_virt().unwrap() };
 
     let cr3: u64;

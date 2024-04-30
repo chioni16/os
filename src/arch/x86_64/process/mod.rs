@@ -6,7 +6,7 @@ mod process;
 mod scheduler;
 
 use self::{
-    create::create_kernel_task,
+    create::{create_kernel_task, create_user_task},
     lock::Lock,
     pid::{get_new_pid, Pid},
     process::{Process, State},
@@ -20,6 +20,12 @@ use log::info;
 
 static SCHEDULER_LOCK: Lock = Lock::new();
 static mut SCHEDULER: MaybeUninit<Scheduler> = MaybeUninit::uninit();
+
+// to be used from within the task init functions
+#[no_mangle]
+unsafe fn scheduler_unlock() {
+    SCHEDULER_LOCK.unlock();
+}
 
 #[no_mangle]
 fn schedule() {
@@ -125,9 +131,9 @@ pub(super) fn init(hpet: Arc<Hpet>) {
 
     let p0 = create_kernel_task(func0 as _);
     info!("p0: {:#x?}", p0);
-    let p1 = create_kernel_task(func1 as _);
+    let p1 = create_user_task(func1 as _);
     info!("p1: {:#x?}", p1);
-    let p2 = create_kernel_task(func2 as _);
+    let p2 = create_user_task(func2 as _);
     info!("p2: {:#x?}", p2);
 
     info!("Scheduler alloc started");
@@ -223,8 +229,12 @@ extern "C" fn func1() {
     unsafe {
         core::arch::asm!(
             "3:",
-            "mov r8, 0xffff8000000b8000",
-            "mov byte ptr [r8], 0x31",
+            // "mov r8, 0xffff8000000b8000",
+            // "mov byte ptr [r8], 0x31",
+            "mov r11, 1",
+            "int 0x2e",
+            "push rax",
+            "pop rax",
             "mov r8, 0",
             "4:",
             "add r8, 1",
@@ -233,8 +243,8 @@ extern "C" fn func1() {
             // "call schedule",
             // "mov rdi, 2",
             // "call unblock",
-            "mov rdi, 1000000000",
-            "call delay",
+            // "mov rdi, 1000000000",
+            // "call delay",
             "jmp 3b",
             options(noreturn),
         );
@@ -246,17 +256,21 @@ extern "C" fn func2() {
     unsafe {
         core::arch::asm!(
             "5:",
-            "mov r8, 0xffff8000000b8000",
-            "mov byte ptr [r8], 0x32",
+            // "mov r8, 0xffff8000000b8000",
+            // "mov byte ptr [r8], 0x32",
+            "mov r11, 2",
+            "int 0x2e",
             "mov r8, 0",
             "6:",
+            "push rax",
+            "pop rax",
             "add r8, 1",
             "cmp r8, 100000000",
             "jl 6b",
             // "call schedule",
             // "call block",
-            "mov rdi, 2000000000",
-            "call delay",
+            // "mov rdi, 2000000000",
+            // "call delay",
             "jmp 5b",
             options(noreturn),
         );
