@@ -1,5 +1,6 @@
 mod acpi;
 mod apic;
+mod elf;
 mod gdt;
 mod interrupts;
 mod paging;
@@ -39,7 +40,7 @@ pub(crate) fn init(multiboot_info: &MultibootInfo) {
 
     syscall::init();
     // userspace::run_userpace_code();
-    process::init(Arc::new(hpet));
+    process::init(multiboot_info, Arc::new(hpet));
 }
 
 unsafe fn rdmsr(msr: u32) -> u64 {

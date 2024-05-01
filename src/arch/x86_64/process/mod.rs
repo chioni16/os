@@ -13,7 +13,11 @@ use self::{
     scheduler::Scheduler,
 };
 use super::{apic, timers::hpet::Hpet};
-use crate::{arch::get_cur_page_table_start, mem::VirtualAddress};
+use crate::{
+    arch::get_cur_page_table_start,
+    mem::{PhysicalAddress, VirtualAddress},
+    multiboot::MultibootInfo,
+};
 use alloc::sync::Arc;
 use core::mem::MaybeUninit;
 use log::info;
@@ -110,7 +114,7 @@ pub(super) fn timer_interrupt_handler() {
     }
 }
 
-pub(super) fn init(hpet: Arc<Hpet>) {
+pub(super) fn init(multiboot_info: &MultibootInfo, hpet: Arc<Hpet>) {
     let mut init = Process {
         id: get_new_pid(),
         // SAFETY: paging enabled by the time we get here
@@ -129,19 +133,27 @@ pub(super) fn init(hpet: Arc<Hpet>) {
         VirtualAddress::new(stack_top)
     };
 
+    let mut scheduler = Scheduler::new(init, hpet);
+
     let p0 = create_kernel_task(func0 as _);
     info!("p0: {:#x?}", p0);
-    let p1 = create_user_task(func1 as _);
-    info!("p1: {:#x?}", p1);
-    let p2 = create_user_task(func2 as _);
-    info!("p2: {:#x?}", p2);
-
-    info!("Scheduler alloc started");
-    let mut scheduler = Scheduler::new(init, hpet);
     scheduler.add(p0);
-    scheduler.add(p1);
-    scheduler.add(p2);
-    info!("Scheduler alloc stopped");
+    // let p1 = create_user_task(func1 as _);
+    // info!("p1: {:#x?}", p1);
+    // scheduler.add(p1);
+    // let p2 = create_user_task(func2 as _);
+    // info!("p2: {:#x?}", p2);
+    // scheduler.add(p2);
+
+    for module in multiboot_info.multiboot_modules() {
+        info!("[scheduler init] module: {:#x?}", module);
+        let (entry, page_table) = super::elf::load_elf(
+            PhysicalAddress::new(module.mod_start as u64),
+            (module.mod_end - module.mod_start) as usize
+        );
+        let proc = create::create_user_task2(entry, page_table);
+        scheduler.add(proc);
+    }
 
     info!("scheduler: {:#x?}", scheduler);
 

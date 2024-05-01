@@ -163,7 +163,57 @@ fn map_task_page_table(
     }
 }
 
-// fn create_task(task: *const ()) -> (P4Table, VirtualAddress, VirtualAddress, VirtualAddress) {
+pub(super) fn create_user_task2(us_task_code_virt_start: VirtualAddress, mut task_page_table: P4Table) -> Process {
+    // allocate a kernel stack for the task and map it in the page table
+    let (kernel_stack_bottom, kernel_stack_top) = create_stack(KERNEL_STACK_SIZE, None);
+    // TODO: should I map kernel stack in the original kernel page table and then copy it into the new prog page table?
+    let kernel_stack_bottom_virt = unsafe { kernel_stack_bottom.to_virt().unwrap() };
+    map_task_page_table(
+        &mut task_page_table,
+        kernel_stack_bottom_virt,
+        Frame::range_inclusive(
+            &Frame::containing_address(kernel_stack_bottom),
+            &Frame::containing_address(kernel_stack_top),
+        ),
+        EntryFlags::PRESENT | EntryFlags::WRITABLE,
+    );
+    // Virtual address is of kernel page table
+    let kernel_stack_top = unsafe { kernel_stack_top.to_virt().unwrap() };
+
+    // allocate a userspace stack for the task and map it in the page table
+    let us_stack_virt_base = VirtualAddress::new(0x800000);
+    let (user_stack_bottom, user_stack_top) = create_stack(
+        USER_STACK_SIZE,
+        Some((
+            us_task_code_virt_start,
+            us_stack_virt_base.offset(USER_STACK_SIZE as u64),
+            true,
+        )),
+    );
+    map_task_page_table(
+        &mut task_page_table,
+        us_stack_virt_base,
+        Frame::range_inclusive(
+            &Frame::containing_address(user_stack_bottom),
+            &Frame::containing_address(user_stack_top),
+        ),
+        EntryFlags::USER_ACCESSIBLE | EntryFlags::PRESENT | EntryFlags::WRITABLE,
+    );
+    // virtual address is of user page table
+    let user_stack_top = {
+        let user_stack_size = user_stack_top.to_inner() - user_stack_bottom.to_inner();
+        us_stack_virt_base.offset(user_stack_size)
+    };
+
+    Process {
+        stack_top: user_stack_top,
+        kernel_stack_top,
+        cr3: task_page_table.forget(),
+        id: get_new_pid(),
+        state: State::Ready,
+    }
+}
+
 pub(super) fn create_user_task(task: *const ()) -> Process {
     let (task_code_start, task_code_end) = load_task_code(task);
 
@@ -229,13 +279,6 @@ pub(super) fn create_user_task(task: *const ()) -> Process {
         let user_stack_size = user_stack_top.to_inner() - user_stack_bottom.to_inner();
         us_stack_virt_base.offset(user_stack_size)
     };
-
-    // (
-    //     task_page_table,
-    //     us_task_code_virt_start,
-    //     kernel_stack_top,
-    //     user_stack_top,
-    // );
 
     Process {
         stack_top: user_stack_top,
